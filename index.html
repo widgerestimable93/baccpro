@@ -4054,6 +4054,16 @@ const OfflineMode = {
       navigator.serviceWorker.register('./sw.js')
         .then(reg => console.log('[SW] Enregistré, scope :', reg.scope))
         .catch(err => console.warn('[SW] Échec d\'enregistrement :', err));
+
+      // Rechargement automatique dès qu'une nouvelle version du SW prend
+      // le contrôle de la page — évite d'avoir à faire Ctrl+Maj+R après
+      // chaque déploiement pour voir les changements.
+      let _swRefreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (_swRefreshing) return;
+        _swRefreshing = true;
+        window.location.reload();
+      });
     }
 
     // Écouter les événements réseau
