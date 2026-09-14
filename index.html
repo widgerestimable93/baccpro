@@ -1998,9 +1998,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
   var callbackCounter = 0;
 
   function jsonpCall(fnName, args, successFn, failureFn){
-    var cbName = '__gasCb_' + (callbackCounter++) + '_' + Date.now();
+    var reqId  = (callbackCounter++);
+    var cbName = '__gasCb_' + reqId + '_' + Date.now();
     var script = document.createElement('script');
-    var done = false;
+    var done   = false;
+    var t0     = performance.now();
 
     function cleanup(){
       delete window[cbName];
@@ -2010,22 +2012,29 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
     window[cbName] = function(data){
       if (done) return;
       done = true;
+      var ms = Math.round(performance.now() - t0);
       cleanup();
       if (data && data.__bridgeError) {
+        console.warn('[GAS bridge #' + reqId + '] ' + fnName + ' — erreur serveur après ' + ms + 'ms :', data.__bridgeError);
         if (failureFn) failureFn(new Error(data.__bridgeError));
-        else console.error('[GAS bridge]', fnName, data.__bridgeError);
-      } else if (successFn) {
-        successFn(data);
+      } else {
+        console.log('[GAS bridge #' + reqId + '] ' + fnName + ' — succès en ' + ms + 'ms', data);
+        if (successFn) successFn(data);
       }
     };
 
     script.onerror = function(){
       if (done) return;
       done = true;
+      var ms = Math.round(performance.now() - t0);
       cleanup();
+      console.error(
+        '[GAS bridge #' + reqId + '] ' + fnName + ' — ÉCHEC DE CHARGEMENT après ' + ms + 'ms.\n' +
+        'URL testée (colle-la dans un nouvel onglet pour voir la réponse brute du serveur) :\n' +
+        script.src
+      );
       var e = new Error('Échec du chargement JSONP (réseau)');
       if (failureFn) failureFn(e);
-      else console.error('[GAS bridge]', fnName, e);
     };
 
     try {
@@ -2035,12 +2044,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
         + '?fn=' + encodeURIComponent(fnName)
         + '&callback=' + encodeURIComponent(cbName)
         + '&args=' + encodeURIComponent(argsB64);
+      console.log('[GAS bridge #' + reqId + '] ' + fnName + ' — envoi :', script.src);
       document.head.appendChild(script);
     } catch(e){
       done = true;
       cleanup();
+      console.error('[GAS bridge #' + reqId + '] ' + fnName + ' — erreur avant envoi :', e);
       if (failureFn) failureFn(e);
-      else console.error('[GAS bridge]', fnName, e);
       return;
     }
 
@@ -2048,10 +2058,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
     setTimeout(function(){
       if (!done) {
         done = true;
+        var ms = Math.round(performance.now() - t0);
         cleanup();
+        console.error('[GAS bridge #' + reqId + '] ' + fnName + ' — DÉLAI DÉPASSÉ après ' + ms + 'ms. URL :', script.src);
         var e = new Error('Délai dépassé — pas de réponse du serveur.');
         if (failureFn) failureFn(e);
-        else console.error('[GAS bridge]', fnName, e);
       }
     }, 20000);
   }
