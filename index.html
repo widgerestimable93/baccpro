@@ -1979,15 +1979,82 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
 
 <script>
 // ════════════════════════════════════════════════════════
-// PONT API — remplace google.script.run par fetch()
-// Nécessaire car ce fichier est hébergé sur GitHub Pages
-// (hors du bac à sable Apps Script). Garde exactement la même
-// syntaxe d'appel que google.script.run dans tout le reste du
-// fichier : aucune autre ligne n'a besoin d'être modifiée.
+// PONT API — remplace google.script.run par JSONP
+//
+// Pourquoi pas fetch() : les Web Apps Apps Script redirigent
+// systématiquement (302) vers script.googleusercontent.com/macros/echo,
+// et cette réponse finale ne renvoie jamais l'en-tête
+// Access-Control-Allow-Origin. Résultat : le navigateur bloque la
+// lecture de la réponse par fetch() depuis un autre domaine, quelle
+// que soit la configuration du déploiement — c'est une limitation
+// documentée d'Apps Script, pas un bug de ce projet.
+// JSONP (chargement via balise <script>) n'est jamais soumis à CORS,
+// ce qui contourne le problème. Garde la même syntaxe d'appel que
+// google.script.run dans tout le reste du fichier.
 // ════════════════════════════════════════════════════════
 (function(){
-  // ⚠️ REMPLACE cette URL par celle de ton déploiement Apps Script (se termine par /exec)
+  // ⚠️ URL de ton déploiement Apps Script (se termine par /exec)
   var GAS_API_URL = 'https://script.google.com/macros/s/AKfycbx5zUzECFFW5C44juCU2d0-PtO_XL8Fz7WuXBFzijL10NwN5shuxAn6rdumWsFspSQpMQ/exec';
+  var callbackCounter = 0;
+
+  function jsonpCall(fnName, args, successFn, failureFn){
+    var cbName = '__gasCb_' + (callbackCounter++) + '_' + Date.now();
+    var script = document.createElement('script');
+    var done = false;
+
+    function cleanup(){
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function(data){
+      if (done) return;
+      done = true;
+      cleanup();
+      if (data && data.__bridgeError) {
+        if (failureFn) failureFn(new Error(data.__bridgeError));
+        else console.error('[GAS bridge]', fnName, data.__bridgeError);
+      } else if (successFn) {
+        successFn(data);
+      }
+    };
+
+    script.onerror = function(){
+      if (done) return;
+      done = true;
+      cleanup();
+      var e = new Error('Échec du chargement JSONP (réseau)');
+      if (failureFn) failureFn(e);
+      else console.error('[GAS bridge]', fnName, e);
+    };
+
+    try {
+      var argsJson = JSON.stringify(args || []);
+      var argsB64  = btoa(unescape(encodeURIComponent(argsJson))); // base64 UTF-8-safe
+      script.src = GAS_API_URL
+        + '?fn=' + encodeURIComponent(fnName)
+        + '&callback=' + encodeURIComponent(cbName)
+        + '&args=' + encodeURIComponent(argsB64);
+      document.head.appendChild(script);
+    } catch(e){
+      done = true;
+      cleanup();
+      if (failureFn) failureFn(e);
+      else console.error('[GAS bridge]', fnName, e);
+      return;
+    }
+
+    // Sécurité : si le serveur ne répond jamais (timeout réseau, etc.)
+    setTimeout(function(){
+      if (!done) {
+        done = true;
+        cleanup();
+        var e = new Error('Délai dépassé — pas de réponse du serveur.');
+        if (failureFn) failureFn(e);
+        else console.error('[GAS bridge]', fnName, e);
+      }
+    }, 20000);
+  }
 
   function makeRunner(successFn, failureFn){
     return new Proxy({}, {
@@ -1999,34 +2066,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
           return function(fn){ return makeRunner(successFn, fn); };
         }
         if (prop === 'withUserObject') {
-          // non supporté par ce pont — ignoré sans casser la chaîne
           return function(){ return makeRunner(successFn, failureFn); };
         }
-        // Sinon : c'est un vrai nom de fonction serveur (ex: login, getQuestions…)
         return function(){
           var args = Array.prototype.slice.call(arguments);
-          fetch(GAS_API_URL, {
-            method: 'POST',
-            // text/plain évite le préflight CORS (Apps Script ne gère pas OPTIONS)
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ fn: prop, args: args })
-          })
-          .then(function(r){
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            return r.json();
-          })
-          .then(function(data){
-            if (data && data.__bridgeError) {
-              if (failureFn) failureFn(new Error(data.__bridgeError));
-              else console.error('[GAS bridge]', prop, data.__bridgeError);
-            } else if (successFn) {
-              successFn(data);
-            }
-          })
-          .catch(function(e){
-            if (failureFn) failureFn(e);
-            else console.error('[GAS bridge]', prop, e);
-          });
+          jsonpCall(prop, args, successFn, failureFn);
         };
       }
     });
