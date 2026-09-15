@@ -1377,6 +1377,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
 </style>
 </head>
 <body>
+<audio id="bg-music" loop preload="none" style="display:none">
+  <source src="./baccpro_melodie_boucle.mp3" type="audio/mpeg">
+</audio>
 
 <!-- SESSION CHECK SPLASH -->
 <div class="session-check" id="session-check">
@@ -1717,6 +1720,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
     <div id="quiz-mode-badge">SURVIE</div>
     <div class="quiz-score-live" id="quiz-score-live">⭐ 0</div>
     <button id="sound-toggle-btn" onclick="_toggleSound()" title="Son" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--border2);color:var(--text2);cursor:pointer;font-size:.9rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s">🔊</button>
+    <button id="music-toggle-btn" onclick="_toggleMusic()" title="Musique de fond" style="width:30px;height:30px;border-radius:8px;background:var(--card);border:1px solid var(--border2);color:var(--text2);cursor:pointer;font-size:.9rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .18s">🎵</button>
     <!-- Timer par question (cercle SVG) -->
     <div class="q-timer-wrap" id="q-timer-wrap">
       <svg width="42" height="42" style="transform:rotate(-90deg)" viewBox="0 0 42 42">
@@ -2339,6 +2343,7 @@ function startQuiz(){
         else if(window._mockAnswerCache) App._answerCache=window._mockAnswerCache;
         stopTimer(); _stopQTimer();
         showPage('quiz');
+        Music.start();
         _resetFeedbackOverlay(); _renderLives(); _renderStreak();
         renderQuestion();
         if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
@@ -2570,7 +2575,7 @@ function nextQuestion(){
   App.currentQ++; renderQuestion(); window.scrollTo(0,0);
   if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
 }
-function finishQuiz(){ stopTimer(); _stopQTimer(); saveScoreToServer(); showResults(); }
+function finishQuiz(){ stopTimer(); _stopQTimer(); Music.stop(); saveScoreToServer(); showResults(); }
 
 // ════════════════════════════════════════════════════════
 // EXPLICATION
@@ -2793,6 +2798,7 @@ function smartReplay() {
 
         stopTimer(); _stopQTimer();
         showPage('quiz');
+        Music.start();
         _resetFeedbackOverlay(); _renderLives(); _renderStreak();
         renderQuestion();
         if (App._tpq && App._tpq > 0) _startQTimer(App._tpq);
@@ -2838,6 +2844,7 @@ function smartReplay() {
 
         stopTimer(); _stopQTimer();
         showPage('quiz');
+        Music.start();
         _resetFeedbackOverlay(); _renderLives(); _renderStreak();
         renderQuestion();
         if (App._tpq && App._tpq > 0) _startQTimer(App._tpq);
@@ -2944,7 +2951,7 @@ function practiceError(qId){
       App._answerCache=res.quizAnswers||{}; App._tpq=0;
       App.currentQ=0; App.score=0; App.answers=[]; App.streak=0; App.maxStreak=0; App.lives=3;
       App.quizMode='practice'; stopTimer(); _stopQTimer();
-      showPage('quiz'); _resetFeedbackOverlay(); _renderStreak(); renderQuestion();
+      showPage('quiz'); Music.start(); _resetFeedbackOverlay(); _renderStreak(); renderQuestion();
     })
     .withFailureHandler(()=>{ hideLoader(); showToast('Erreur.','error'); })
     .getQuestions({token:App.token,questionId:qId,limit:1});
@@ -3748,6 +3755,7 @@ function doAbandon(){
   closeAbandon();
   stopTimer();
   _stopQTimer();
+  Music.stop();
   App.questions=[];App.answers=[];App.score=0;App.currentQ=0;
   App.quizSessionId=null;App._answerCache={};
   showPage('dashboard');
@@ -3951,6 +3959,81 @@ function _toggleSound(){
 document.addEventListener('DOMContentLoaded', ()=>{
   const btn = document.getElementById('sound-toggle-btn');
   if(btn) btn.textContent = Sound._enabled ? '🔊' : '🔇';
+});
+
+
+// ════════════════════════════════════════════════════════
+// MUSIQUE DE FOND — <audio> en boucle, fondu doux, toggle
+// ════════════════════════════════════════════════════════
+const Music = (function(){
+  const TARGET_VOLUME = 0.5;   // le fichier est déjà mixé à -7dB, marge supplémentaire ici
+  const FADE_MS = 700;
+  let _fadeTimer = null;
+
+  function _el(){ return document.getElementById('bg-music'); }
+
+  function _fadeTo(target, ms){
+    const el = _el();
+    if(!el) return;
+    if(_fadeTimer) clearInterval(_fadeTimer);
+    const steps = 20;
+    const stepMs = ms / steps;
+    const startVol = el.volume;
+    const delta = (target - startVol) / steps;
+    let i = 0;
+    _fadeTimer = setInterval(()=>{
+      i++;
+      el.volume = Math.max(0, Math.min(1, startVol + delta * i));
+      if(i >= steps){
+        clearInterval(_fadeTimer);
+        _fadeTimer = null;
+        el.volume = target;
+        if(target === 0) el.pause();
+      }
+    }, stepMs);
+  }
+
+  return {
+    // Désactivée par défaut : on ne surprend pas l'utilisateur avec un
+    // nouveau son au chargement — il doit l'activer une première fois.
+    _enabled: localStorage.getItem('music_enabled') === 'true',
+
+    start: function(){
+      if(!this._enabled) return;
+      const el = _el();
+      if(!el) return;
+      el.volume = 0;
+      const p = el.play();
+      if(p && p.catch) p.catch(()=>{ /* lecture auto bloquée — se relancera au prochain clic utilisateur */ });
+      _fadeTo(TARGET_VOLUME, FADE_MS);
+    },
+
+    stop: function(){
+      _fadeTo(0, FADE_MS);
+    },
+
+    toggle: function(){
+      this._enabled = !this._enabled;
+      localStorage.setItem('music_enabled', this._enabled);
+      if(this._enabled){
+        // Si un quiz est en cours à l'écran, démarrer tout de suite
+        if(document.getElementById('page-quiz')?.classList.contains('active')) this.start();
+      } else {
+        this.stop();
+      }
+      return this._enabled;
+    }
+  };
+})();
+
+function _toggleMusic(){
+  const on = Music.toggle();
+  const btn = document.getElementById('music-toggle-btn');
+  if(btn) btn.textContent = on ? '🎵' : '🔕';
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('music-toggle-btn');
+  if(btn) btn.textContent = Music._enabled ? '🎵' : '🔕';
 });
 
 
@@ -4249,6 +4332,7 @@ function doQuickStart(){
       App._answerCache=res.quizAnswers||{};
       stopTimer(); _stopQTimer();
       showPage('quiz');
+      Music.start();
       _resetFeedbackOverlay(); _renderLives(); _renderStreak();
       renderQuestion();
     })
