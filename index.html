@@ -2205,23 +2205,28 @@ function switchTab(tab){
   document.getElementById('tab-'+tab).classList.add('active');
   document.getElementById('form-'+tab).classList.add('active');
 }
+let _authPending=false;
 function doLogin(){
+  if(_authPending) return;
   const email=document.getElementById('login-email').value.trim();
   const pass=document.getElementById('login-password').value;
   const errEl=document.getElementById('login-error');
   errEl.classList.remove('show');
   if(!email||!pass){ showError(errEl,'Remplis tous les champs.'); return; }
+  _authPending=true;
   showLoader('Connexion…');
   google.script.run
     .withSuccessHandler(res=>{
+      _authPending=false;
       hideLoader();
       if(res.success){ App.user=res.user; if(res.token) saveToken(res.token); showToast('Bienvenue ! 👋','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onLogin(); BannerCtrl.showApkBanner(); },600); }
       else showError(errEl,res.message);
     })
-    .withFailureHandler(err=>{ hideLoader(); showError(errEl,'Erreur : '+err.message); })
+    .withFailureHandler(err=>{ _authPending=false; hideLoader(); showError(errEl,'Erreur : '+err.message); })
     .login(email,pass);
 }
 function doRegister(){
+  if(_authPending) return;
   const email=document.getElementById('reg-email').value.trim();
   const pass=document.getElementById('reg-password').value;
   const niveau=document.getElementById('reg-niveau').value;
@@ -2229,14 +2234,16 @@ function doRegister(){
   errEl.classList.remove('show');
   if(!email||!pass){ showError(errEl,'Remplis tous les champs.'); return; }
   if(pass.length<4){ showError(errEl,'Mot de passe trop court (min 4).'); return; }
+  _authPending=true;
   showLoader('Création du compte…');
   google.script.run
     .withSuccessHandler(res=>{
+      _authPending=false;
       hideLoader();
       if(res.success){ App.user=res.user; if(res.token) saveToken(res.token); showToast('Compte créé ! 🎉','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onNewAccount(); BannerCtrl.showApkBanner(); },600); }
       else showError(errEl,res.message);
     })
-    .withFailureHandler(err=>{ hideLoader(); showError(errEl,'Erreur : '+err.message); })
+    .withFailureHandler(err=>{ _authPending=false; hideLoader(); showError(errEl,'Erreur : '+err.message); })
     .register({email,password:pass,niveau});
 }
 function doLogout(){
@@ -6377,6 +6384,7 @@ var PAYMENT = (function(){
         + '<div><strong>Nom :</strong> ' + (p.name || '-') + '</div>'
         + '<div><strong>Date :</strong> ' + (p.date || '-') + '</div>'
         + (p.note ? '<div><strong>Note :</strong> ' + p.note + '</div>' : '')
+        + (p.photo_url ? '<div><a href="' + p.photo_url + '" target="_blank" style="color:#FF6B00;font-weight:700">📸 Voir la preuve</a></div>' : '')
         + '</div>' + actions + '</div>';
     }).join('');
   }
