@@ -1,5 +1,6 @@
 package com.baccpro.app;
 
+
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
@@ -18,13 +19,17 @@ import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 
+
 public class MainActivity extends Activity {
+
 
     private static final String APP_URL =
         "https://script.google.com/macros/s/AKfycbx5zUzECFFW5C44juCU2d0-PtO_XL8Fz7WuXBFzijL10NwN5shuxAn6rdumWsFspSQpMQ/exec";
 
+
     private WebView webView;
     private ProgressBar progressBar;
+
 
     @SuppressLint({"SetJavaScriptEnabled"})
     @Override
@@ -50,6 +55,7 @@ public class MainActivity extends Activity {
         setupWebView();
         webView.loadUrl(APP_URL);
     }
+
 
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
@@ -91,11 +97,13 @@ public class MainActivity extends Activity {
         });
     }
 
+
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) { webView.goBack(); return true; }
         return super.onKeyDown(keyCode, event);
     }
+
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
