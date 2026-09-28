@@ -1,6 +1,5 @@
 package com.baccpro.app;
 
-
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
@@ -19,17 +18,13 @@ import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 
-
 public class MainActivity extends Activity {
 
-
     private static final String APP_URL =
-        "https://script.google.com/macros/s/AKfycbx5zUzECFFW5C44juCU2d0-PtO_XL8Fz7WuXBFzijL10NwN5shuxAn6rdumWsFspSQpMQ/exec";
-
+        "https://widgerestimable93.github.io/baccpro/";
 
     private WebView webView;
     private ProgressBar progressBar;
-
 
     @SuppressLint({"SetJavaScriptEnabled"})
     @Override
@@ -56,7 +51,6 @@ public class MainActivity extends Activity {
         webView.loadUrl(APP_URL);
     }
 
-
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
         WebSettings s = webView.getSettings();
@@ -79,7 +73,12 @@ public class MainActivity extends Activity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 String url = req.getUrl().toString();
-                if (!url.contains("script.google.com") && !url.contains("google.com")) {
+                String host = req.getUrl().getHost();
+                boolean isAppHost = "widgerestimable93.github.io".equalsIgnoreCase(host)
+                    || "script.google.com".equalsIgnoreCase(host)
+                    || (host != null && ("google.com".equalsIgnoreCase(host)
+                        || host.toLowerCase().endsWith(".google.com")));
+                if (!isAppHost) {
                     startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
                     return true;
                 }
@@ -95,22 +94,3 @@ public class MainActivity extends Activity {
                 progressBar.setProgress(progress);
             }
         });
-    }
-
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) { webView.goBack(); return true; }
-        return super.onKeyDown(keyCode, event);
-    }
-
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) getWindow().getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-            View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
-    }
-}
