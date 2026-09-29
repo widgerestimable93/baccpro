@@ -1507,6 +1507,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
     <button class="auth-back" onclick="showPage('home')">← Retour</button>
     <h2 class="auth-title">baccPRO</h2>
     <p class="auth-subtitle">Connecte-toi ou crée un compte gratuitement.</p>
+    <button id="google-signin-button" type="button" onclick="startGoogleLogin()" aria-label="Continuer avec Google" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 14px;padding:12px 16px;border:1px solid #d7deea;border-radius:10px;background:#fff;color:#1f2937;font-size:15px;font-weight:600;cursor:pointer"><span aria-hidden="true" style="font-size:19px;font-weight:800;color:#4285F4">G</span>Continuer avec Google</button>
+    <div class="error-msg" id="google-auth-error" role="alert" aria-live="polite"></div>
     <div class="auth-tabs">
       <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Connexion</button>
       <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Inscription</button>
@@ -7925,6 +7927,7 @@ pueden hacer una gran diferencia para el planeta.`
 
 })();
 </script>
+<script src="./google-sign-in.js"></script>
 
 </body>
 </html>
