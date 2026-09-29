@@ -234,7 +234,7 @@ public class MainActivity extends Activity {
                     connection.setRequestMethod("POST");
                     connection.setConnectTimeout(20000);
                     connection.setReadTimeout(25000);
-                    connection.setInstanceFollowRedirects(true);
+                    connection.setInstanceFollowRedirects(false);
                     connection.setDoOutput(true);
                     connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                     byte[] requestBytes = body.toString().getBytes(StandardCharsets.UTF_8);
@@ -244,10 +244,42 @@ public class MainActivity extends Activity {
                     }
 
                     int status = connection.getResponseCode();
-                    InputStream responseStream = status >= 200 && status < 400
-                        ? connection.getInputStream() : connection.getErrorStream();
-                    String responseText = readResponse(responseStream);
-                    connection.disconnect();
+                    String responseText;
+                    if (status >= 300 && status < 400) {
+                        String redirect = connection.getHeaderField("Location");
+                        connection.disconnect();
+                        if (redirect == null || redirect.isEmpty()) {
+                            throw new IOException("Missing Apps Script response location");
+                        }
+                        URL redirectUrl = new URL(new URL(API_URL), redirect);
+                        String redirectHost = redirectUrl.getHost();
+                        if (!"https".equalsIgnoreCase(redirectUrl.getProtocol())
+                            || redirectHost == null
+                            || !("script.googleusercontent.com".equalsIgnoreCase(redirectHost)
+                                || redirectHost.toLowerCase().endsWith(".script.googleusercontent.com"))) {
+                            throw new IOException("Unexpected Apps Script response host");
+                        }
+                        HttpURLConnection redirected = (HttpURLConnection) redirectUrl.openConnection();
+                        redirected.setRequestMethod("GET");
+                        redirected.setConnectTimeout(20000);
+                        redirected.setReadTimeout(25000);
+                        int redirectedStatus = redirected.getResponseCode();
+                        InputStream redirectedStream = redirectedStatus >= 200 && redirectedStatus < 300
+                            ? redirected.getInputStream() : redirected.getErrorStream();
+                        responseText = readResponse(redirectedStream);
+                        redirected.disconnect();
+                        if (redirectedStatus < 200 || redirectedStatus >= 300) {
+                            throw new IOException("Apps Script response failed");
+                        }
+                    } else {
+                        InputStream responseStream = status >= 200 && status < 300
+                            ? connection.getInputStream() : connection.getErrorStream();
+                        responseText = readResponse(responseStream);
+                        connection.disconnect();
+                        if (status < 200 || status >= 300) {
+                            throw new IOException("Apps Script response failed");
+                        }
+                    }
                     result = new JSONObject(responseText);
                 } catch (Exception e) {
                     result = new JSONObject();
