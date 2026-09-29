@@ -9,6 +9,9 @@ var GOOGLE_OAUTH_TICKET_TTL_SECONDS = 180;
 
 function googleAuthStart(mode, clientState, codeChallenge) {
   try {
+    if (mode !== 'web' && mode !== 'android') {
+      return err('Mode de connexion Google invalide.');
+    }
     var clientSecret = PropertiesService.getScriptProperties()
       .getProperty('GOOGLE_OAUTH_CLIENT_SECRET');
     if (!clientSecret) return err('La connexion Google n’est pas encore configurée.');
