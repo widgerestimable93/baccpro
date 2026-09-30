@@ -2119,6 +2119,7 @@ const App = {
   theme: localStorage.getItem('bp_theme') || 'dark',
   token: localStorage.getItem('bp_token') || null,
   quizSessionId: null,
+  _offlineQuiz: false,
   _answerCache: {},
   streak: 0, maxStreak: 0, lives: 3,
   _feedbackPending: null,
@@ -2182,13 +2183,13 @@ function checkSession(){
     .withSuccessHandler(res=>{
       splash.classList.add('hidden');
       if(res.success&&res.user){
-        App.user=res.user;
+        rememberAuthenticatedUser(res.user,false);
         showPage('dashboard');
         setTimeout(BannerCtrl.showApkBanner, 2000);
         showToast('Bon retour, '+res.user.email.split('@')[0]+' ! 👋','success');
       }
     })
-    .withFailureHandler(()=>{ splash.classList.add('hidden'); })
+    .withFailureHandler(()=>{splash.classList.add('hidden');const u=window.BaccproOffline&&window.BaccproOffline.getUser();if(u){App.user=u;showPage('dashboard');showToast('Mode hors ligne — '+window.BaccproOffline.questionCount()+' questions disponibles.','info');}})
     .validateSession(App.token);
 }
 function saveToken(t){ App.token=t; localStorage.setItem('bp_token',t); }
@@ -2231,7 +2232,7 @@ function doLogin(){
     .withSuccessHandler(res=>{
       _authPending=false;
       hideLoader();
-      if(res.success){ App.user=res.user; if(res.token) saveToken(res.token); showToast('Bienvenue ! 👋','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onLogin(); BannerCtrl.showApkBanner(); },600); }
+      if(res.success){ rememberAuthenticatedUser(res.user,false); if(res.token) saveToken(res.token); showToast('Bienvenue ! 👋','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onLogin(); BannerCtrl.showApkBanner(); },600); }
       else showError(errEl,res.message);
     })
     .withFailureHandler(err=>{ _authPending=false; hideLoader(); showError(errEl,'Erreur : '+err.message); })
@@ -2252,7 +2253,7 @@ function doRegister(){
     .withSuccessHandler(res=>{
       _authPending=false;
       hideLoader();
-      if(res.success){ App.user=res.user; if(res.token) saveToken(res.token); showToast('Compte créé ! 🎉','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onNewAccount(); BannerCtrl.showApkBanner(); },600); }
+      if(res.success){ rememberAuthenticatedUser(res.user,false); if(res.token) saveToken(res.token); showToast('Compte créé ! 🎉','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onNewAccount(); BannerCtrl.showApkBanner(); },600); }
       else showError(errEl,res.message);
     })
     .withFailureHandler(err=>{ _authPending=false; hideLoader(); showError(errEl,'Erreur : '+err.message); })
@@ -2260,6 +2261,7 @@ function doRegister(){
 }
 function doLogout(){
   if(App.token) google.script.run.destroySession(App.token);
+  if(window.BaccproOffline) window.BaccproOffline.forgetUser();
   clearToken(); App.user=null; stopTimer(); _stopQTimer();
   showToast('Déconnecté.',''); showPage('home');
 }
@@ -2348,13 +2350,15 @@ function startQuiz(){
 
   // ── Charger les questions (après reset de la session si connecté) ─
   function _doLoadQuestions(){
+    if(!navigator.onLine){_startOfflineQuizFromCache();return;}
     google.script.run
       .withSuccessHandler(res=>{
         hideLoader();
         if(!res.success||!res.questions||!res.questions.length){
-          showToast('Aucune question trouvée pour ce niveau/matière.','error'); return;
+          if(!_startOfflineQuizFromCache())showToast('Aucune question trouvée pour ce niveau/matière.','error'); return;
         }
-        App.questions=res.questions; App.quizSessionId=res.quizSessionId||null;
+        if(window.BaccproOffline)window.BaccproOffline.cacheQuizResponse(res);
+App.questions=res.questions; App.quizSessionId=res.quizSessionId||null; App._offlineQuiz=false;
         App.currentQ=0; App.score=0; App.answers=[];
         App.streak=0; App.maxStreak=0; App.lives=3;
         App._answerCache={};
@@ -2367,12 +2371,12 @@ function startQuiz(){
         renderQuestion();
         if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
       })
-      .withFailureHandler(err=>{ hideLoader(); showToast('Erreur : '+err.message,'error'); })
+      .withFailureHandler(err=>{if(!_startOfflineQuizFromCache())showToast('Erreur : '+err.message,'error');})
       .getQuestions({matiere:App.quizMatiere,niveau:App.quizNiveau,limit:App.quizQty,token:App.token,mode:mode});
   }
 
   // Réinitialiser les bonnes réponses déjà mémorisées avant chaque nouveau quiz
-  if(App.token){
+  if(App.token&&navigator.onLine){
     google.script.run
       .withSuccessHandler(()=>_doLoadQuestions())
       .withFailureHandler(()=>_doLoadQuestions()) // en cas d'erreur, on continue quand même
@@ -2663,7 +2667,7 @@ function stopTimer(){
 // RÉSULTATS
 // ════════════════════════════════════════════════════════
 function saveScoreToServer(){
-  if(!App.user||!App.token) return;
+  if(!App.user||!App.token||App._offlineQuiz||!navigator.onLine) return;
   const answers=App.answers.map((a,i)=>({
     questionId:App.questions[i]&&App.questions[i].id||('Q'+i),
     answerIndex:a.userAnswer
@@ -4155,6 +4159,27 @@ function closeApkBanner(){
 
 
 // ════════════════════════════════════════════════════════
+// CACHE DES QUESTIONS POUR LE MODE HORS LIGNE
+const OfflineCache=(function(){
+  const QUESTIONS_KEY='bp_offline_questions_v1',USER_KEY='bp_offline_user_v1',REFRESH_MS=7*24*60*60*1000;
+  let syncing=false;
+  function read(){try{const d=JSON.parse(localStorage.getItem(QUESTIONS_KEY)||'null');return d&&Array.isArray(d.questions)&&d.quizAnswers?d:null;}catch(e){return null;}}
+  function write(d){try{localStorage.setItem(QUESTIONS_KEY,JSON.stringify(d));return true;}catch(e){console.warn('[OfflineCache] Stockage impossible',e);return false;}}
+  function shuffled(a){const x=a.slice();for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]];}return x;}
+  return {
+    rememberUser:function(u){if(!u||!u.email)return;try{localStorage.setItem(USER_KEY,JSON.stringify({id:u.id||'',email:String(u.email),niveau:u.niveau||'debutant',score_total:Number(u.score_total)||0}));}catch(e){}},
+    getUser:function(){try{const u=JSON.parse(localStorage.getItem(USER_KEY)||'null');return u&&typeof u.email==='string'?u:null;}catch(e){return null;}},
+    forgetUser:function(){try{localStorage.removeItem(USER_KEY);}catch(e){}},
+    onAuthenticated:function(u,force){this.rememberUser(u);this.syncQuestions(!!force);},
+    questionCount:function(){const d=read();return d?d.questions.length:0;},
+    cacheQuizResponse:function(r){if(!r||!Array.isArray(r.questions)||!r.questions.length)return;const d=read()||{version:1,syncedAt:0,questions:[],quizAnswers:{}};const byId={};d.questions.forEach(q=>{if(q&&q.id)byId[q.id]=q;});r.questions.forEach(q=>{if(q&&q.id)byId[q.id]=q;});write({version:1,syncedAt:d.syncedAt||0,savedAt:Date.now(),questions:Object.keys(byId).map(id=>byId[id]),quizAnswers:Object.assign({},d.quizAnswers,r.quizAnswers||{})});},
+    syncQuestions:function(force){if(syncing||!App.token||!navigator.onLine)return;const old=read();if(!force&&old&&old.syncedAt&&Date.now()-old.syncedAt<REFRESH_MS)return;syncing=true;google.script.run.withSuccessHandler(r=>{syncing=false;if(!r||!r.success||!Array.isArray(r.questions)||!r.questions.length){if(force&&!old)showToast('Le cache hors ligne n’a pas pu être préparé. Réessaie avec Internet.','warn');return;}const saved=write({version:1,syncedAt:Date.now(),savedAt:Date.now(),questions:r.questions,quizAnswers:r.quizAnswers||{}});if(force&&saved)showToast(r.questions.length+' questions enregistrées pour le mode hors ligne.','success');else if(force&&!saved)showToast('Stockage insuffisant pour enregistrer les questions hors ligne.','warn');}).withFailureHandler(e=>{syncing=false;console.warn('[OfflineCache] Synchronisation impossible',e);if(force&&!old)showToast('Le téléchargement des questions hors ligne a échoué.','warn');}).getOfflineQuestions({token:App.token});},
+    makeQuiz:function(f){f=f||{};const d=read();if(!d)return null;let m=f.matiere||'toutes';if(m==='Philosophie')m='Philo';if(m==='Sciences Sociales')m='Sc. Sociales';const n=f.niveau||'tous';let a=d.questions.filter(q=>q&&q.id&&(m==='toutes'||q.matiere===m)&&(n==='tous'||q.niveau===n)&&Array.isArray(q.choix)&&q.choix.length);if(!a.length)return null;const lim=Math.max(1,Math.min(30,parseInt(f.limit,10)||10,a.length));const answers={};const questions=shuffled(a).slice(0,lim).map(q=>{const ci=Number(d.quizAnswers[q.id]);const choices=shuffled(q.choix.map((text,i)=>({text:text,correct:i===ci})));answers[q.id]=choices.findIndex(c=>c.correct);return Object.assign({},q,{choix:choices.map(c=>c.text)});}).filter(q=>answers[q.id]>=0);return questions.length?{success:true,questions:questions,quizAnswers:answers,quizSessionId:null,tpq:0,total:questions.length}:null;}
+  };
+})();
+window.BaccproOffline=OfflineCache;
+function rememberAuthenticatedUser(user,force){App.user=user;setTimeout(()=>{if(window.BaccproOffline)window.BaccproOffline.onAuthenticated(user,!!force);},0);}
+function _startOfflineQuizFromCache(){const r=window.BaccproOffline&&window.BaccproOffline.makeQuiz({matiere:App.quizMatiere,niveau:App.quizNiveau,limit:App.quizQty});if(!r){hideLoader();showToast('Aucune question hors ligne. Connecte-toi une fois pour les télécharger.','error');return false;}hideLoader();App.questions=r.questions;App.quizSessionId=null;App._offlineQuiz=true;App.currentQ=0;App.score=0;App.answers=[];App.streak=0;App.maxStreak=0;App.lives=3;App._answerCache=r.quizAnswers||{};stopTimer();_stopQTimer();showPage('quiz');Music.start();_resetFeedbackOverlay();_renderLives();_renderStreak();renderQuestion();if(App._tpq&&App._tpq>0)_startQTimer(App._tpq);showToast('Quiz depuis le cache — résultat non synchronisé.','info');return true;}
 // MODE HORS LIGNE — Détection + Service Worker
 // ════════════════════════════════════════════════════════
 const OfflineMode = {
