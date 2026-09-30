@@ -44,8 +44,8 @@ function googleAuthStart(mode, clientState, codeChallenge) {
       GOOGLE_OAUTH_STATE_TTL_SECONDS
     );
 
-    var redirectUri = 'https://script.google.com/macros/d/' +
-      ScriptApp.getScriptId() + '/usercallback';
+    var redirectUri = ScriptApp.getService().getUrl();
+      
     var query = {
       client_id: GOOGLE_OAUTH_CLIENT_ID,
       redirect_uri: redirectUri,
@@ -65,7 +65,7 @@ function googleAuthStart(mode, clientState, codeChallenge) {
   }
 }
 
-// Called by Apps Script through the /usercallback endpoint.
+// Called by doGet when Google redirects to the /exec endpoint.
 function googleOAuthCallback(e) {
   var params = (e && e.parameter) || {};
   var stateToken = String(params.state || '');
@@ -90,8 +90,8 @@ function googleOAuthCallback(e) {
   if (!clientSecret) return _googleOAuthPage_('', 'La connexion Google n’est pas encore configurée.');
 
   try {
-    var redirectUri = 'https://script.google.com/macros/d/' +
-      ScriptApp.getScriptId() + '/usercallback';
+    var redirectUri = ScriptApp.getService().getUrl();
+      
     var tokenResponse = UrlFetchApp.fetch('https://oauth2.googleapis.com/token', {
       method: 'post',
       payload: {
@@ -135,9 +135,9 @@ function googleOAuthCallback(e) {
       transaction
     );
     if (transaction.mode === 'android') {
-      var androidHash = 'bp_google_android=' + encodeURIComponent(ticket) +
+      var androidUrl = 'baccpro://oauth/callback?ticket=' + encodeURIComponent(ticket) +
         '&state=' + encodeURIComponent(transaction.clientState);
-      var androidUrl = GOOGLE_OAUTH_RETURN_URL + '#' + androidHash;
+      
       return _googleOAuthPage_(androidUrl, 'Connexion Google confirmée. Appuie sur le bouton ci-dessous pour retourner dans baccPRO.');
     }
 
