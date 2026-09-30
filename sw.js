@@ -11,7 +11,7 @@
 //    que le frontend peut détecter (offline: true).
 // ════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'baccpro-shell-v1';
+const CACHE_NAME = 'baccpro-shell-v2';
 
 // Fichiers de l'app shell à précharger à l'installation.
 // Chemins relatifs : fonctionne quel que soit le sous-dossier
@@ -19,6 +19,7 @@ const CACHE_NAME = 'baccpro-shell-v1';
 const APP_SHELL = [
   './',
   './index.html',
+  './google-sign-in.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
