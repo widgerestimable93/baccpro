@@ -176,7 +176,7 @@
       }
       try { localStorage.removeItem(PENDING_KEY); } catch (storageError) {}
       App.user = response.user;
-      saveToken(response.token);
+      saveToken(response.token); if (window.BaccproOffline) window.BaccproOffline.onAuthenticated(response.user, true);
       showToast('Bienvenue ! 👋', 'success');
       showPage('dashboard');
       setTimeout(function () {
