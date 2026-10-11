@@ -1464,9 +1464,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
       </div>
     </div>
     <div style="padding-top:16px;border-top:1px solid var(--border2)">
-      <a class="btn btn-outline" href="./conditions.html" style="width:100%;font-size:.82rem;text-decoration:none">📄 Conditions d’utilisation</a>
-    </div>
-    <div style="padding-top:16px;border-top:1px solid var(--border2)">
       <button class="btn btn-ghost" style="width:100%;font-size:.88rem" onclick="closeSettings();setTimeout(GUIDE.replay,300)">🎓 Revoir le tutoriel</button>
     </div>
   </div>
@@ -1476,10 +1473,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
 <div class="page active" id="page-home">
   <div style="padding:var(--pad) var(--pad) 0;display:flex;justify-content:space-between;align-items:center">
     <div class="nav-logo">bacc<span>PRO</span></div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <button class="settings-btn" type="button" onclick="openSettings()" title="Thèmes et paramètres" aria-label="Thèmes et paramètres">⚙️</button>
-      <button class="btn btn-outline btn-sm" onclick="showPage('auth')">Connexion</button>
-    </div>
+    <button class="btn btn-outline btn-sm" onclick="showPage('auth')">Connexion</button>
   </div>
   <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:var(--pad)">
     <div class="home-badge">🎓 Plateforme bac NS4 · Haïti</div>
@@ -1488,15 +1482,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
     <div class="home-buttons">
       <button class="btn btn-accent" onclick="showPage('auth','register')">🚀 Commencer</button>
       <button class="btn btn-outline" onclick="showPage('auth','login')">Se connecter</button>
+      <button class="btn btn-outline" onclick="enterLocalMode()">📴 Jouer sans connexion</button>
     </div>
     <div class="home-features">
       <div class="home-feat"><div class="icon">📚</div><div class="label">7 matières NS4</div></div>
       <div class="home-feat"><div class="icon">⏱️</div><div class="label">Mode Examen</div></div>
       <div class="home-feat"><div class="icon">📊</div><div class="label">Suivi progrès</div></div>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:20px;font-size:.78rem">
-      <button class="btn btn-ghost btn-sm" type="button" onclick="openSettings()">🎨 Choisir un thème</button>
-      <a href="./conditions.html" style="color:var(--text2);text-decoration:underline;text-underline-offset:3px">Conditions d’utilisation</a>
     </div>
   </div>
 </div>
@@ -1507,8 +1498,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
     <button class="auth-back" onclick="showPage('home')">← Retour</button>
     <h2 class="auth-title">baccPRO</h2>
     <p class="auth-subtitle">Connecte-toi ou crée un compte gratuitement.</p>
-    <button id="google-signin-button" type="button" onclick="startGoogleLogin()" aria-label="Continuer avec Google" style="width:100%;display:flex;align-items:center;justify-content:center;gap:10px;margin:0 0 14px;padding:12px 16px;border:1px solid #d7deea;border-radius:10px;background:#fff;color:#1f2937;font-size:15px;font-weight:600;cursor:pointer"><span aria-hidden="true" style="font-size:19px;font-weight:800;color:#4285F4">G</span>Continuer avec Google</button>
-    <div class="error-msg" id="google-auth-error" role="alert" aria-live="polite"></div>
     <div class="auth-tabs">
       <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Connexion</button>
       <button class="auth-tab" id="tab-register" onclick="switchTab('register')">Inscription</button>
@@ -2119,7 +2108,6 @@ const App = {
   theme: localStorage.getItem('bp_theme') || 'dark',
   token: localStorage.getItem('bp_token') || null,
   quizSessionId: null,
-  _offlineQuiz: false,
   _answerCache: {},
   streak: 0, maxStreak: 0, lives: 3,
   _feedbackPending: null,
@@ -2183,13 +2171,13 @@ function checkSession(){
     .withSuccessHandler(res=>{
       splash.classList.add('hidden');
       if(res.success&&res.user){
-        rememberAuthenticatedUser(res.user,false);
+        App.user=res.user;
         showPage('dashboard');
         setTimeout(BannerCtrl.showApkBanner, 2000);
         showToast('Bon retour, '+res.user.email.split('@')[0]+' ! 👋','success');
       }
     })
-    .withFailureHandler(()=>{splash.classList.add('hidden');const u=window.BaccproOffline&&window.BaccproOffline.getUser();if(u){App.user=u;showPage('dashboard');showToast('Mode hors ligne — '+window.BaccproOffline.questionCount()+' questions disponibles.','info');}})
+    .withFailureHandler(()=>{ splash.classList.add('hidden'); })
     .validateSession(App.token);
 }
 function saveToken(t){ App.token=t; localStorage.setItem('bp_token',t); }
@@ -2232,7 +2220,7 @@ function doLogin(){
     .withSuccessHandler(res=>{
       _authPending=false;
       hideLoader();
-      if(res.success){ rememberAuthenticatedUser(res.user,false); if(res.token) saveToken(res.token); showToast('Bienvenue ! 👋','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onLogin(); BannerCtrl.showApkBanner(); },600); }
+      if(res.success){ App.user=res.user; if(res.token) saveToken(res.token); showToast('Bienvenue ! 👋','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onLogin(); BannerCtrl.showApkBanner(); },600); }
       else showError(errEl,res.message);
     })
     .withFailureHandler(err=>{ _authPending=false; hideLoader(); showError(errEl,'Erreur : '+err.message); })
@@ -2253,7 +2241,7 @@ function doRegister(){
     .withSuccessHandler(res=>{
       _authPending=false;
       hideLoader();
-      if(res.success){ rememberAuthenticatedUser(res.user,false); if(res.token) saveToken(res.token); showToast('Compte créé ! 🎉','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onNewAccount(); BannerCtrl.showApkBanner(); },600); }
+      if(res.success){ App.user=res.user; if(res.token) saveToken(res.token); showToast('Compte créé ! 🎉','success'); showPage('dashboard'); setTimeout(()=>{ GUIDE.onNewAccount(); BannerCtrl.showApkBanner(); },600); }
       else showError(errEl,res.message);
     })
     .withFailureHandler(err=>{ _authPending=false; hideLoader(); showError(errEl,'Erreur : '+err.message); })
@@ -2261,7 +2249,6 @@ function doRegister(){
 }
 function doLogout(){
   if(App.token) google.script.run.destroySession(App.token);
-  if(window.BaccproOffline) window.BaccproOffline.forgetUser();
   clearToken(); App.user=null; stopTimer(); _stopQTimer();
   showToast('Déconnecté.',''); showPage('home');
 }
@@ -2344,21 +2331,22 @@ function changeQty(d){
 // ════════════════════════════════════════════════════════
 // DÉMARRAGE QUIZ
 // ════════════════════════════════════════════════════════
-function startQuiz(){
+function _serverStartQuiz(){
+  const _att=App._bpAttempt;
   showLoader('Chargement des questions…');
   const mode=(App.quizNiveau!=='tous'&&App.token)?'adaptive':'normal';
 
   // ── Charger les questions (après reset de la session si connecté) ─
   function _doLoadQuestions(){
-    if(!navigator.onLine){_startOfflineQuizFromCache();return;}
     google.script.run
       .withSuccessHandler(res=>{
         hideLoader();
+        if(_att!==App._bpAttempt) return;
+        if(App._bpGuardClear) App._bpGuardClear();
         if(!res.success||!res.questions||!res.questions.length){
-          if(!_startOfflineQuizFromCache())showToast('Aucune question trouvée pour ce niveau/matière.','error'); return;
+          showToast('Aucune question trouvée pour ce niveau/matière.','error'); return;
         }
-        if(window.BaccproOffline)window.BaccproOffline.cacheQuizResponse(res);
-App.questions=res.questions; App.quizSessionId=res.quizSessionId||null; App._offlineQuiz=false;
+        App.questions=res.questions; App.quizSessionId=res.quizSessionId||null;
         App.currentQ=0; App.score=0; App.answers=[];
         App.streak=0; App.maxStreak=0; App.lives=3;
         App._answerCache={};
@@ -2371,12 +2359,12 @@ App.questions=res.questions; App.quizSessionId=res.quizSessionId||null; App._off
         renderQuestion();
         if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
       })
-      .withFailureHandler(err=>{if(!_startOfflineQuizFromCache())showToast('Erreur : '+err.message,'error');})
+      .withFailureHandler(err=>{ if(_att!==App._bpAttempt) return; if(App._bpGuardClear) App._bpGuardClear(); hideLoader(); _bpFallback(err); })
       .getQuestions({matiere:App.quizMatiere,niveau:App.quizNiveau,limit:App.quizQty,token:App.token,mode:mode});
   }
 
   // Réinitialiser les bonnes réponses déjà mémorisées avant chaque nouveau quiz
-  if(App.token&&navigator.onLine){
+  if(App.token){
     google.script.run
       .withSuccessHandler(()=>_doLoadQuestions())
       .withFailureHandler(()=>_doLoadQuestions()) // en cas d'erreur, on continue quand même
@@ -2384,6 +2372,218 @@ App.questions=res.questions; App.quizSessionId=res.quizSessionId||null; App._off
   } else {
     _doLoadQuestions();
   }
+}
+
+// ════════════════════════════════════════════════════════
+// MODE HORS-LIGNE — banque locale (questions.json)
+// Principe : connecté + réseau OK → le serveur reste utilisé (points, classement,
+// limite gratuite). Hors-ligne, sans compte, ou serveur trop lent (6 s) → le quiz
+// se joue depuis la banque locale, mise en cache par sw.js et copiée dans IndexedDB.
+// ════════════════════════════════════════════════════════
+var QUESTIONS_URL = './questions.json';
+var BP_LOCAL_KEY  = 'bp_local_v1';
+var BP_MATIERES   = ['Maths','Chimie','Physique','SVT','Philo','Économie','Sc. Sociales'];
+var BP_MAT_ALIAS  = {
+  'mathematiques':'Maths','math':'Maths','philosophie':'Philo','economie':'Économie',
+  'sciences sociales':'Sc. Sociales','sc sociales':'Sc. Sociales','sc.sociales':'Sc. Sociales',
+  'sciences de la vie et de la terre':'SVT','sciences naturelles':'SVT'
+};
+App.localMode = false; App._bank = null; App._bankPromise = null; App._bpLocalQuiz = false; App._bpAttempt = 0;
+
+function _bpStrip(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\./g,'').replace(/\s+/g,' ').trim(); }
+function _bpNormMat(m){
+  var k=_bpStrip(m); if(!k) return '';
+  for(var i=0;i<BP_MATIERES.length;i++) if(_bpStrip(BP_MATIERES[i])===k) return BP_MATIERES[i];
+  return BP_MAT_ALIAS[k]||BP_MAT_ALIAS[String(m).toLowerCase().trim()]||String(m).trim(); // matière inconnue : conservée telle quelle
+}
+function _bpShuffle(a){ a=a.slice(); for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function _bpHash(s){ var h=5381; for(var i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))|0; return 'q'+(h>>>0).toString(36); }
+
+// Accepte [ {...} ] ou { questions:[...] } ; bonne_reponse 1-4 (comme l'import admin),
+// correctIndex 0-3, ou texte. Si le fichier contient des 0 mais aucun 4, il est lu en base 0.
+function _bpNormBank(raw){
+  var arr=Array.isArray(raw)?raw:((raw&&(raw.questions||raw.data))||[]);
+  var has0=false, has4=false;
+  arr.forEach(function(q){
+    if(!q||q.correctIndex!==undefined&&q.correctIndex!==null&&q.correctIndex!=='') return;
+    var r=q.bonne_reponse!==undefined?q.bonne_reponse:q.rep, s=String(r==null?'':r).trim();
+    if(s==='0') has0=true; if(s==='4') has4=true;
+  });
+  var zeroBased=has0&&!has4;
+  if(zeroBased) console.warn('[banque] bonne_reponse semble indexée à partir de 0 : lecture en base 0');
+  var out=[], skipped=0, seen={};
+  arr.forEach(function(q){
+    if(!q||typeof q!=='object'){ skipped++; return; }
+    var question=String(q.question||'').trim();
+    var ch=Array.isArray(q.choix)?q.choix:(Array.isArray(q.options)?q.options:[q.choix1||q.c1,q.choix2||q.c2,q.choix3||q.c3,q.choix4||q.c4]);
+    ch=ch.map(function(c){ return String(c==null?'':c).trim(); });
+    var idx=-1;
+    if(q.correctIndex!==undefined&&q.correctIndex!==null&&q.correctIndex!=='') idx=parseInt(q.correctIndex,10);
+    else{
+      var r=q.bonne_reponse!==undefined?q.bonne_reponse:q.rep;
+      if(r!==undefined&&r!==null&&String(r).trim()!==''){
+        var rs=String(r).trim();
+        if(/^\d+$/.test(rs)) idx=parseInt(rs,10)-(zeroBased?0:1);
+        else idx=ch.findIndex(function(c){ return c.toLowerCase()===rs.toLowerCase(); });
+      }
+    }
+    var mat=_bpNormMat(q.matiere);
+    if(!question||ch.length<2||ch.some(function(c){return !c;})||!(idx>=0&&idx<ch.length)||!mat){ skipped++; return; }
+    var nv=String(q.niveau||q.level||'moyen').toLowerCase().trim();
+    nv=({easy:'facile',medium:'moyen',hard:'difficile',normal:'moyen'})[nv]||nv;
+    if(['facile','moyen','difficile'].indexOf(nv)<0) nv='moyen';
+    var id=q.id?String(q.id):_bpHash(mat+'|'+question);
+    if(seen[id]){ skipped++; return; }
+    seen[id]=1;
+    out.push({ id:id, matiere:mat, niveau:nv, question:question, choix:ch, correctIndex:idx, explication:q.explication||q.explanation||'' });
+  });
+  if(skipped) console.warn('[banque] '+skipped+' question(s) ignorée(s) (format invalide ou doublon)');
+  return out;
+}
+
+var BP_CONSEILS={'Maths':'💡 Mémorise la formule et entraîne-toi avec des exemples.','Chimie':'🧪 Visualise la réaction pour mieux retenir.','Physique':'⚡ Associe la formule à une situation concrète.','SVT':'🌿 Fais un schéma annoté pour fixer le mécanisme.','Philo':'🧠 Retiens la thèse de l\'auteur et un exemple pour l\'illustrer.','Économie':'💰 Relie la notion à un exemple de la vie courante.','Sc. Sociales':'🌍 Associe le fait à une date et à une cause.'};
+var BP_DIFFS={facile:'🟢 Concept de base',moyen:'🟡 Niveau intermédiaire',difficile:'🔴 Concept avancé'};
+function _bpRich(texte,matiere,niveau,bonneRep){
+  if(texte&&typeof texte==='object'){ if(!texte.bonneRep) texte.bonneRep=bonneRep; return texte; }
+  texte=String(texte||'').trim();
+  if(!texte) return { resume:'', points:[], formule:'', conseil:'', bonneRep:bonneRep };
+  var ph=texte.split(/(?<=[.!?])\s+/).map(function(s){return s.trim();}).filter(function(s){return s.length>3;});
+  var fm=texte.match(/[^.!?]*[=\u2192\u2248\u00b2\u00b3\u00d7\u00f7\u03a3\u222b\u221a][^.!?]*/);
+  return { resume:ph[0]||texte, points:ph.slice(1), formule:fm?fm[0].trim():'', conseil:BP_CONSEILS[matiere]||'💡 Revois ce concept dans ton cours.', bonneRep:bonneRep };
+}
+
+// ── Banque : IndexedDB d'abord (instantané), réseau en arrière-plan ──
+function _bpDB(){ return new Promise(function(res,rej){ var r=indexedDB.open('baccpro_offline',1); r.onupgradeneeded=function(){ r.result.createObjectStore('bank',{keyPath:'key'}); }; r.onsuccess=function(){res(r.result);}; r.onerror=function(){rej(r.error);}; }); }
+function _bpSaveBank(b){ return _bpDB().then(function(db){ return new Promise(function(res){ var tx=db.transaction('bank','readwrite'); tx.objectStore('bank').put({key:'all',questions:b,savedAt:new Date().toISOString()}); tx.oncomplete=res; tx.onerror=res; }); }).catch(function(){}); }
+function _bpReadBank(){ return _bpDB().then(function(db){ return new Promise(function(res){ var rq=db.transaction('bank','readonly').objectStore('bank').get('all'); rq.onsuccess=function(){ res(rq.result&&rq.result.questions||null); }; rq.onerror=function(){ res(null); }; }); }).catch(function(){ return null; }); }
+function _bpRefreshBank(background){
+  return fetch(QUESTIONS_URL,{cache:'no-cache'})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(json){
+      var b=_bpNormBank(json); if(!b.length) return null;
+      _bpSaveBank(b); if(background) App._bank=b;
+      var prev=parseInt(localStorage.getItem('bp_bank_count')||'0',10);
+      if(prev!==b.length){ localStorage.setItem('bp_bank_count',String(b.length)); showToast('📥 '+b.length+' questions disponibles hors-ligne','success'); }
+      return b;
+    }).catch(function(){ return null; });
+}
+function bpLoadBank(){
+  if(App._bank) return Promise.resolve(App._bank);
+  if(App._bankPromise) return App._bankPromise;
+  App._bankPromise=_bpReadBank().then(function(local){
+    if(local&&local.length){ App._bank=local; _bpRefreshBank(true); return local; }
+    return _bpRefreshBank(false);
+  }).then(function(b){ App._bank=b||[]; App._bankPromise=null; return App._bank; });
+  return App._bankPromise;
+}
+
+// ── Données locales (localStorage) ──────────────────────
+function _bpLocal(){
+  var d=null; try{ d=JSON.parse(localStorage.getItem(BP_LOCAL_KEY)||'null'); }catch(e){}
+  d=d||{}; d.score_total=d.score_total||0; d.streak=d.streak||0; d.lastDay=d.lastDay||'';
+  d.history=d.history||[]; d.wrong=d.wrong||{}; d.seen=d.seen||{};
+  return d;
+}
+function _bpSave(d){ try{ localStorage.setItem(BP_LOCAL_KEY,JSON.stringify(d)); }catch(e){} }
+function _bp2(n){ return ('0'+n).slice(-2); }
+function _bpDay(t){ t=t||new Date(); return t.getFullYear()+'-'+_bp2(t.getMonth()+1)+'-'+_bp2(t.getDate()); }
+function _bpNiveau(s){ return s>=500?'expert':s>=200?'avance':s>=50?'intermediaire':'debutant'; }
+function _bpLocalUser(){ var d=_bpLocal(); return { id:'local', email:'eleve@hors-ligne', score_total:d.score_total, niveau:_bpNiveau(d.score_total), is_premium:false, local:true }; }
+function _bpUseLocal(){ return App.localMode||!navigator.onLine||!App.token; }
+
+function _bpRecordCurrent(){
+  if(App._bpRecordedId===App._bpQuizId) return;
+  App._bpRecordedId=App._bpQuizId;
+  var d=_bpLocal(), now=Date.now(), today=_bpDay(), correct=0;
+  App.answers.forEach(function(a,i){
+    var q=App.questions[i]; if(!q) return;
+    d.seen[q.id]=now;
+    if(a.correct){
+      correct++;
+      var w=d.wrong[q.id]; if(w){ w.ok=(w.ok||0)+1; w.box=(w.box||1)+1; if(w.box>=3) delete d.wrong[q.id]; }
+    }else{
+      var x=d.wrong[q.id]||{ko:0,ok:0,box:1}; x.ko++; x.box=1; x.last=now; x.question=q.question; x.matiere=q.matiere; d.wrong[q.id]=x;
+    }
+  });
+  var t=new Date();
+  d.history.unshift({ date:_bpDay(t)+' '+_bp2(t.getHours())+':'+_bp2(t.getMinutes()), matiere:App.quizMatiere==='toutes'?'toutes':App.quizMatiere,
+                      score:App.score, correct:correct, total:App.answers.length, temps_s:Math.round((now-(App._bpQuizStart||now))/1000) });
+  if(d.history.length>200) d.history.length=200;
+  d.score_total+=App.score;
+  if(d.lastDay!==today){ var y=new Date(); y.setDate(y.getDate()-1); d.streak=(d.lastDay===_bpDay(y))?d.streak+1:1; d.lastDay=today; }
+  var ids=Object.keys(d.seen); if(ids.length>5000) ids.sort(function(a,b){return d.seen[a]-d.seen[b];}).slice(0,ids.length-5000).forEach(function(i){delete d.seen[i];});
+  _bpSave(d);
+  if(App.user) App.user.score_total=(App.user.score_total||0)+App.score;
+}
+
+// Statistiques au format de getUserStats()
+function _bpStats(){
+  var d=_bpLocal(), h=d.history, best=0, tot=0, by={}, week=[];
+  var now=new Date(), mon=new Date(now); mon.setHours(0,0,0,0); mon.setDate(mon.getDate()-((now.getDay()||7)-1));
+  var wk={};
+  h.forEach(function(x){
+    best=Math.max(best,x.score||0); tot+=x.score||0;
+    var m=x.matiere==='toutes'?'Toutes':x.matiere; by[m]=by[m]||{total:0,count:0}; by[m].total+=x.score||0; by[m].count+=x.total||0;
+    var p=String(x.date).substring(0,10).split('-'), dt=new Date(+p[0],+p[1]-1,+p[2]);
+    if(dt>=mon){ var di=(dt.getDay()||7)-1; wk[di]=(wk[di]||0)+(x.score||0); }
+  });
+  Object.keys(wk).forEach(function(k){ week.push({dayIdx:+k,score:wk[k]}); });
+  return { totalGames:h.length, bestScore:best, averageScore:h.length?Math.round(tot/h.length):0, streak:d.streak, byMatiere:by, weekActivity:week, badges:[], totalScore:d.score_total };
+}
+
+// ── Lancer un quiz depuis la banque ─────────────────────
+function _bpBegin(list){
+  var cache={};
+  App.questions=list.map(function(q){
+    var good=q.choix[q.correctIndex], sh=_bpShuffle(q.choix), ni=sh.indexOf(good);
+    cache[q.id]=ni;
+    return { id:q.id, matiere:q.matiere, niveau:q.niveau, question:q.question, choix:sh, bonne_reponse:ni, explication:_bpRich(q.explication,q.matiere,q.niveau,good) };
+  });
+  App.quizSessionId=null; App._answerCache=cache; App._bpLocalQuiz=true;
+  App._bpQuizId=Date.now(); App._bpQuizStart=Date.now();
+  App.currentQ=0; App.score=0; App.answers=[]; App.streak=0; App.maxStreak=0; App.lives=3;
+  stopTimer(); _stopQTimer();
+  showPage('quiz'); Music.start(); _resetFeedbackOverlay(); _renderLives(); _renderStreak();
+  renderQuestion();
+  if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
+}
+function _bpStartFromBank(bank){
+  var d=_bpLocal();
+  var pool=bank.filter(function(q){ return (App.quizMatiere==='toutes'||q.matiere===App.quizMatiere)&&(App.quizNiveau==='tous'||q.niveau===App.quizNiveau); });
+  if(!pool.length){ showToast('Aucune question trouvée pour ce niveau/matière.','error'); return; }
+  var qty=Math.min(App.quizQty||10,pool.length);
+  var wrong=_bpShuffle(pool.filter(function(q){ return d.wrong[q.id]; })).slice(0,Math.floor(qty*0.3));
+  var wid={}; wrong.forEach(function(q){ wid[q.id]=1; });
+  var fresh=_bpShuffle(pool.filter(function(q){ return !wid[q.id]; })).sort(function(a,b){ return (d.seen[a.id]||0)-(d.seen[b.id]||0); });
+  _bpBegin(_bpShuffle(wrong.concat(fresh.slice(0,qty-wrong.length))));
+}
+function _bpLocalStart(){
+  showLoader('Préparation du quiz…');
+  bpLoadBank().then(function(bank){
+    hideLoader();
+    if(bank&&bank.length) _bpStartFromBank(bank);
+    else showToast('Banque de questions introuvable. Ouvre l\'app une fois avec internet.','error');
+  });
+}
+function _bpFallback(err){
+  bpLoadBank().then(function(bank){
+    if(bank&&bank.length){ showToast('📴 Mode hors-ligne','info'); _bpStartFromBank(bank); }
+    else showToast('Erreur : '+(err&&err.message||'réseau'),'error');
+  });
+}
+
+// Point d'entrée de base (les couches « modes » et « paywall » l'enveloppent)
+function startQuiz(){
+  App._bpAttempt=(App._bpAttempt||0)+1; App._bpLocalQuiz=false;
+  if(!(navigator.onLine&&App.token&&!App.localMode)){ _bpLocalStart(); return; }
+  bpLoadBank(); // précharge pour le secours
+  var att=App._bpAttempt;
+  var guard=setTimeout(function(){
+    if(att!==App._bpAttempt) return;
+    App._bpAttempt++; hideLoader(); _bpFallback(new Error('Connexion lente'));
+  },6000);
+  App._bpGuardClear=function(){ clearTimeout(guard); };
+  _serverStartQuiz();
 }
 
 // ════════════════════════════════════════════════════════
@@ -2667,7 +2867,7 @@ function stopTimer(){
 // RÉSULTATS
 // ════════════════════════════════════════════════════════
 function saveScoreToServer(){
-  if(!App.user||!App.token||App._offlineQuiz||!navigator.onLine) return;
+  if(!App.user||!App.token) return;
   const answers=App.answers.map((a,i)=>({
     questionId:App.questions[i]&&App.questions[i].id||('Q'+i),
     answerIndex:a.userAnswer
@@ -4159,27 +4359,6 @@ function closeApkBanner(){
 
 
 // ════════════════════════════════════════════════════════
-// CACHE DES QUESTIONS POUR LE MODE HORS LIGNE
-const OfflineCache=(function(){
-  const QUESTIONS_KEY='bp_offline_questions_v1',USER_KEY='bp_offline_user_v1',REFRESH_MS=7*24*60*60*1000;
-  let syncing=false;
-  function read(){try{const d=JSON.parse(localStorage.getItem(QUESTIONS_KEY)||'null');return d&&Array.isArray(d.questions)&&d.quizAnswers?d:null;}catch(e){return null;}}
-  function write(d){try{localStorage.setItem(QUESTIONS_KEY,JSON.stringify(d));return true;}catch(e){console.warn('[OfflineCache] Stockage impossible',e);return false;}}
-  function shuffled(a){const x=a.slice();for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[x[i],x[j]]=[x[j],x[i]];}return x;}
-  return {
-    rememberUser:function(u){if(!u||!u.email)return;try{localStorage.setItem(USER_KEY,JSON.stringify({id:u.id||'',email:String(u.email),niveau:u.niveau||'debutant',score_total:Number(u.score_total)||0}));}catch(e){}},
-    getUser:function(){try{const u=JSON.parse(localStorage.getItem(USER_KEY)||'null');return u&&typeof u.email==='string'?u:null;}catch(e){return null;}},
-    forgetUser:function(){try{localStorage.removeItem(USER_KEY);}catch(e){}},
-    onAuthenticated:function(u,force){this.rememberUser(u);this.syncQuestions(!!force);},
-    questionCount:function(){const d=read();return d?d.questions.length:0;},
-    cacheQuizResponse:function(r){if(!r||!Array.isArray(r.questions)||!r.questions.length)return;const d=read()||{version:1,syncedAt:0,questions:[],quizAnswers:{}};const byId={};d.questions.forEach(q=>{if(q&&q.id)byId[q.id]=q;});r.questions.forEach(q=>{if(q&&q.id)byId[q.id]=q;});write({version:1,syncedAt:d.syncedAt||0,savedAt:Date.now(),questions:Object.keys(byId).map(id=>byId[id]),quizAnswers:Object.assign({},d.quizAnswers,r.quizAnswers||{})});},
-    syncQuestions:function(force){if(syncing||!App.token||!navigator.onLine)return;const old=read();if(!force&&old&&old.syncedAt&&Date.now()-old.syncedAt<REFRESH_MS)return;syncing=true;google.script.run.withSuccessHandler(r=>{syncing=false;if(!r||!r.success||!Array.isArray(r.questions)||!r.questions.length){if(force&&!old)showToast('Le cache hors ligne n’a pas pu être préparé. Réessaie avec Internet.','warn');return;}const saved=write({version:1,syncedAt:Date.now(),savedAt:Date.now(),questions:r.questions,quizAnswers:r.quizAnswers||{}});if(force&&saved)showToast(r.questions.length+' questions enregistrées pour le mode hors ligne.','success');else if(force&&!saved)showToast('Stockage insuffisant pour enregistrer les questions hors ligne.','warn');}).withFailureHandler(e=>{syncing=false;console.warn('[OfflineCache] Synchronisation impossible',e);if(force&&!old)showToast('Le téléchargement des questions hors ligne a échoué.','warn');}).getOfflineQuestions({token:App.token});},
-    makeQuiz:function(f){f=f||{};const d=read();if(!d)return null;let m=f.matiere||'toutes';if(m==='Philosophie')m='Philo';if(m==='Sciences Sociales')m='Sc. Sociales';const n=f.niveau||'tous';let a=d.questions.filter(q=>q&&q.id&&(m==='toutes'||q.matiere===m)&&(n==='tous'||q.niveau===n)&&Array.isArray(q.choix)&&q.choix.length);if(!a.length)return null;const lim=Math.max(1,Math.min(30,parseInt(f.limit,10)||10,a.length));const answers={};const questions=shuffled(a).slice(0,lim).map(q=>{const ci=Number(d.quizAnswers[q.id]);const choices=shuffled(q.choix.map((text,i)=>({text:text,correct:i===ci})));answers[q.id]=choices.findIndex(c=>c.correct);return Object.assign({},q,{choix:choices.map(c=>c.text)});}).filter(q=>answers[q.id]>=0);return questions.length?{success:true,questions:questions,quizAnswers:answers,quizSessionId:null,tpq:0,total:questions.length}:null;}
-  };
-})();
-window.BaccproOffline=OfflineCache;
-function rememberAuthenticatedUser(user,force){App.user=user;setTimeout(()=>{if(window.BaccproOffline)window.BaccproOffline.onAuthenticated(user,!!force);},0);}
-function _startOfflineQuizFromCache(){const r=window.BaccproOffline&&window.BaccproOffline.makeQuiz({matiere:App.quizMatiere,niveau:App.quizNiveau,limit:App.quizQty});if(!r){hideLoader();showToast('Aucune question hors ligne. Connecte-toi une fois pour les télécharger.','error');return false;}hideLoader();App.questions=r.questions;App.quizSessionId=null;App._offlineQuiz=true;App.currentQ=0;App.score=0;App.answers=[];App.streak=0;App.maxStreak=0;App.lives=3;App._answerCache=r.quizAnswers||{};stopTimer();_stopQTimer();showPage('quiz');Music.start();_resetFeedbackOverlay();_renderLives();_renderStreak();renderQuestion();if(App._tpq&&App._tpq>0)_startQTimer(App._tpq);showToast('Quiz depuis le cache — résultat non synchronisé.','info');return true;}
 // MODE HORS LIGNE — Détection + Service Worker
 // ════════════════════════════════════════════════════════
 const OfflineMode = {
@@ -4199,6 +4378,7 @@ const OfflineMode = {
       let _swRefreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (_swRefreshing) return;
+        var _pq = document.getElementById('page-quiz'); if (_pq && _pq.classList.contains('active')) return;
         _swRefreshing = true;
         window.location.reload();
       });
@@ -7883,7 +8063,7 @@ pueden hacer una gran diferencia para el planeta.`
       var sub = document.getElementById('paywall-subtitle');
       if (sub) {
         if (typeof remaining === 'number' && remaining === 0) {
-          sub.innerHTML = 'Tu as utilisé tes <strong style="color:#00E5FF">3 quiz gratuits</strong> d\'aujourd\'hui.';
+          sub.innerHTML = 'Tu as déjà utilisé ton <strong style="color:#00E5FF">quiz d\'essai gratuit</strong>. Prends un forfait pour continuer à réviser.';
         } else {
           sub.innerHTML = 'Cette fonctionnalité nécessite le <strong style="color:#00E5FF">Plan Pro</strong>.';
         }
@@ -7929,18 +8109,13 @@ pueden hacer una gran diferencia para el planeta.`
             .withSuccessHandler(function(incRes) {
               if (incRes && typeof incRes.remaining === 'number' && incRes.remaining === 0) {
                 setTimeout(function() {
-                  if (typeof showToast === 'function') showToast('⚠️ C\'est ton dernier quiz gratuit du jour !', 'warn');
+                  if (typeof showToast === 'function') showToast('⚠️ C\'était ton quiz d\'essai gratuit !', 'warn');
                 }, 1200);
               }
             })
             .withFailureHandler(function() {})
             .incrementQuizCount({ token: App.token });
           _paywallOrigStart();
-          if (res && typeof res.remaining === 'number' && res.remaining === 1) {
-            setTimeout(function() {
-              if (typeof showToast === 'function') showToast('⚠️ Dernier quiz gratuit du jour !', 'warn');
-            }, 1200);
-          }
         }
       })
       .withFailureHandler(function() {
@@ -7951,8 +8126,177 @@ pueden hacer una gran diferencia para el planeta.`
   };
 
 })();
+
+// ════════════════════════════════════════════════════════
+// MODE HORS-LIGNE — surcharges finales (après toutes les couches)
+// ════════════════════════════════════════════════════════
+(function(){
+  var BP_ONLINE_ONLY=['leaderboard','premium','techniques','admin-payments'];
+
+  // Hors-ligne / sans compte : on saute la vérification réseau du paywall
+  var _outerStart=startQuiz;
+  startQuiz=function(){
+    if(navigator.onLine&&App.token&&!App.localMode){ _outerStart(); return; }
+    var sel=document.querySelector('.mode-btn.selected');
+    if(sel&&typeof MODES!=='undefined') App.gameMode=sel.dataset.mode||MODES.SURVIE;
+    _bpLocalStart();
+  };
+
+  // Score : quiz local → enregistré sur le téléphone ; quiz serveur → comme avant
+  var _origSave=saveScoreToServer;
+  saveScoreToServer=function(){ if(App._bpLocalQuiz){ _bpRecordCurrent(); return; } _origSave(); };
+
+  // Dashboard
+  var _origDash=refreshDashboard;
+  refreshDashboard=function(){
+    if(!_bpUseLocal()){ _origDash(); return; }
+    if(!App.user) return;
+    var u=App.user, s=_bpStats();
+    document.getElementById('dash-avatar').textContent=u.email.substring(0,2).toUpperCase();
+    document.getElementById('dash-email-nav').textContent=u.local?'Mode hors-ligne':u.email;
+    document.getElementById('dash-username').textContent=u.email.split('@')[0];
+    document.getElementById('stat-score').textContent=u.score_total||0;
+    _updateXPBar(u.score_total||0,u.niveau||'debutant');
+    document.getElementById('stat-games').textContent=s.totalGames;
+    document.getElementById('stat-best').textContent=s.bestScore;
+    var st=document.getElementById('dash-streak-val'); if(st) st.textContent=s.streak;
+    var ps=document.getElementById('profile-streak'); if(ps) ps.textContent=s.streak;
+    _renderDashRecos(s.byMatiere);
+    var nv={debutant:['🌱 Débutant','rgba(0,200,83,.1)','#4CAF50'],intermediaire:['📘 Intermédiaire','rgba(21,101,192,.18)','var(--blue3)'],avance:['🔥 Avancé','rgba(255,152,0,.15)','#FFB300'],expert:['🏆 Expert','rgba(255,214,0,.15)','var(--accent2)']}[u.niveau||'debutant'];
+    var b=document.getElementById('dash-niveau-badge'); if(b){ b.textContent=nv[0]; b.style.background=nv[1]; b.style.color=nv[2]; }
+  };
+
+  // Historique
+  var _origHist=loadHistory;
+  loadHistory=function(){
+    if(!_bpUseLocal()){ _origHist(); return; }
+    var cont=document.getElementById('history-list'), h=_bpLocal().history;
+    if(!h.length){ cont.innerHTML='<div class="empty-state"><div class="empty-icon">📭</div><div>Aucun quiz joué encore !</div></div>'; return; }
+    cont.innerHTML='';
+    h.forEach(function(x){
+      var pct=x.total?Math.round((x.correct||0)/x.total*100):null;
+      var bar=pct!==null?'<div class="h-pct-bar"><div class="h-pct-fill" style="width:'+pct+'%;background:'+(pct>=70?'var(--ok)':pct>=40?'var(--warn)':'var(--err)')+'"></div></div>':'';
+      var div=document.createElement('div'); div.className='history-item history-item-click';
+      div.innerHTML='<div class="history-icon mat-'+matClass(x.matiere)+'">'+(MATIERE_ICONS[x.matiere]||'📚')+'</div><div class="history-info"><div class="history-matiere">'+escHTML(x.matiere)+'</div><div class="history-date">'+String(x.date).substring(0,10)+'</div>'+bar+'</div><div class="history-score">'+x.score+' pts</div><div class="history-arrow">›</div>';
+      div.onclick=function(){ _openHistoryDetail(x); };
+      cont.appendChild(div);
+    });
+  };
+
+  // Mes erreurs
+  var _origErr=loadMyErrors;
+  loadMyErrors=function(){
+    if(!_bpUseLocal()){ _origErr(); return; }
+    var cont=document.getElementById('errors-list'), w=_bpLocal().wrong;
+    var arr=Object.keys(w).map(function(k){ var o=w[k]; o.id=k; return o; }).sort(function(a,b){ return (b.ko-a.ko)||((b.last||0)-(a.last||0)); }).slice(0,30);
+    if(!arr.length){ cont.innerHTML='<div class="empty-state"><div class="empty-icon">🎉</div><div>Aucune erreur enregistrée !</div></div>'; return; }
+    cont.innerHTML='';
+    arr.forEach(function(q){
+      var div=document.createElement('div'); div.className='error-card';
+      div.innerHTML='<div class="error-card-header"><span class="error-matiere mat-'+matClass(q.matiere)+'">'+escHTML(q.matiere)+'</span><span class="error-count">'+(q.ko||0)+'✗ · '+(q.ok||0)+'✓</span></div><div class="error-question">'+escHTML(q.question)+'</div><button class="btn btn-primary error-practice-btn">🔁 Réessayer</button>';
+      div.querySelector('button').onclick=function(){ practiceError(q.id); };
+      cont.appendChild(div);
+    });
+  };
+  var _origPractice=practiceError;
+  practiceError=function(id){
+    if(!_bpUseLocal()){ _origPractice(id); return; }
+    bpLoadBank().then(function(bank){
+      var q=(bank||[]).filter(function(x){ return x.id===id; })[0];
+      if(!q){ showToast('Question introuvable.','error'); return; }
+      App._tpq=0; App.quizMode='practice'; _bpBegin([q]);
+    });
+  };
+
+  // Rejouer / nouveau quiz après un quiz local
+  var _origReplay=smartReplay;
+  smartReplay=function(){
+    if(!App._bpLocalQuiz){ _origReplay(); return; }
+    var total=App.answers.length, ok=App.answers.filter(function(a){return a.correct;}).length, pct=total?Math.round(ok/total*100):0;
+    if(pct>60){ _bpLocalStart(); return; }   // nouveau quiz (les erreurs reviennent via « Mes erreurs »)
+    var same=App.questions.map(function(q){ var g=q.choix[q.bonne_reponse]; return { id:q.id, matiere:q.matiere, niveau:q.niveau, question:q.question, choix:q.choix.slice(), correctIndex:q.choix.indexOf(g), explication:q.explication }; });
+    _bpBegin(_bpShuffle(same));
+  };
+
+  // Stats
+  var _origStats=loadStats;
+  loadStats=function(){
+    if(!_bpUseLocal()){ _origStats(); return; }
+    var s=_bpStats(), set=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; };
+    set('ov-games',s.totalGames); set('ov-avg',s.averageScore+' pts'); set('ov-best',s.bestScore); set('ov-streak',s.streak);
+    _renderMatChart(s.byMatiere); _renderWeekChart(s.weekActivity); _renderStatsRecos(s.byMatiere);
+  };
+
+  // Profil
+  var _origProfile=loadProfile;
+  loadProfile=function(){
+    if(!_bpUseLocal()){ _origProfile(); return; }
+    if(!App.user) return;
+    var u=App.user, s=_bpStats();
+    var av=document.getElementById('profile-avatar'); if(av) av.textContent=u.email.substring(0,2).toUpperCase();
+    var em=document.getElementById('profile-email'); if(em) em.textContent=u.local?'Mode hors-ligne — sans compte':u.email;
+    var nv=document.getElementById('profile-niveau'); if(nv) nv.textContent=({debutant:'🌱 Débutant',intermediaire:'📘 Intermédiaire',avance:'🔥 Avancé',expert:'🏆 Expert'})[u.niveau]||'🌱 Débutant';
+    var ps=document.getElementById('profile-streak'); if(ps) ps.textContent=s.streak;
+    var grid=document.getElementById('badges-grid'); if(grid) grid.innerHTML=ALL_BADGES.map(function(b){ return '<div class="badge-card locked"><div class="badge-icon">'+b.icon+'</div><div class="badge-name">'+b.name+'</div><div class="badge-desc">'+b.desc+'</div></div>'; }).join('');
+  };
+
+  // Navigation : sections qui exigent internet
+  var _origSP=showPage;
+  showPage=function(pageId,extra){
+    if(BP_ONLINE_ONLY.indexOf(pageId)>=0&&(!navigator.onLine||App.localMode)){
+      showToast(App.localMode?'📶 Section réservée aux comptes connectés.':'📶 Cette section nécessite internet.','info'); return;
+    }
+    if(pageId==='dashboard'&&App.localMode) App.user=_bpLocalUser();
+    _origSP(pageId,extra);
+    if(pageId==='dashboard'&&App.user&&!App.localMode){ try{ localStorage.setItem('bp_user',JSON.stringify(App.user)); }catch(e){} }
+  };
+
+  // Mode sans compte
+  window.enterLocalMode=function(){
+    App.localMode=true; try{ localStorage.setItem('bp_localmode','1'); }catch(e){}
+    App.user=_bpLocalUser(); bpLoadBank(); showPage('dashboard');
+  };
+  var _origLogout=doLogout;
+  doLogout=function(){
+    if(App.localMode){
+      App.localMode=false; App.user=null; try{ localStorage.removeItem('bp_localmode'); }catch(e){}
+      stopTimer(); _stopQTimer(); showToast('Mode hors-ligne quitté.',''); showPage('home'); return;
+    }
+    try{ localStorage.removeItem('bp_user'); }catch(e){}
+    _origLogout();
+  };
+  var _origSaveToken=saveToken;
+  saveToken=function(t){ App.localMode=false; try{ localStorage.removeItem('bp_localmode'); }catch(e){} _origSaveToken(t); };
+
+  // Démarrage : jamais bloqué par le réseau
+  checkSession=function(){
+    var splash=document.getElementById('session-check');
+    function hide(){ if(splash) splash.classList.add('hidden'); }
+    bpLoadBank();
+    var cached=null; try{ cached=JSON.parse(localStorage.getItem('bp_user')||'null'); }catch(e){}
+    if(!App.token){ hide(); if(localStorage.getItem('bp_localmode')==='1') enterLocalMode(); return; }
+    function useCached(msg){
+      hide();
+      if(cached&&cached.email){ App.user=cached; showPage('dashboard'); if(msg) showToast(msg,''); }
+      else enterLocalMode();
+    }
+    if(!navigator.onLine){ useCached('📴 Mode hors-ligne'); return; }
+    var done=false;
+    var guard=setTimeout(function(){ if(done) return; done=true; useCached('📴 Connexion lente : mode hors-ligne'); },6000);
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(done) return; done=true; clearTimeout(guard); hide();
+        if(res&&res.success&&res.user){
+          App.user=res.user; showPage('dashboard');
+          setTimeout(function(){ BannerCtrl.showApkBanner(); if(typeof _initFCM==='function') _initFCM(res.user); },600);
+          showToast('Bon retour, '+res.user.email.split('@')[0]+' ! 👋','success');
+        }
+      })
+      .withFailureHandler(function(){ if(done) return; done=true; clearTimeout(guard); useCached('📴 Serveur injoignable : mode hors-ligne'); })
+      .validateSession(App.token);
+  };
+})();
 </script>
-<script src="./google-sign-in.js"></script>
 
 </body>
 </html>
