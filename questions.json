@@ -1,0 +1,62 @@
+// ════════════════════════════════════════════════════════════════
+// EXPORT questions.json — à coller dans le Code.gs, puis exécuter
+// la fonction exportQuestionsJSON depuis l'éditeur Apps Script.
+// Le fichier « questions.json » est créé dans ton Google Drive :
+// télécharge-le puis dépose-le à la racine du dépôt GitHub.
+// ════════════════════════════════════════════════════════════════
+function exportQuestionsJSON() {
+  var SHEET_ID   = '';   // laisse vide si le script est lié au Google Sheet ; sinon colle l'ID du Sheet
+  var SHEET_NAME = '';   // laisse vide pour détecter l'onglet qui contient « question » dans son nom
+
+  var ss = SHEET_ID ? SpreadsheetApp.openById(SHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
+  var sh = SHEET_NAME ? ss.getSheetByName(SHEET_NAME) : null;
+  if (!sh) {
+    ss.getSheets().forEach(function (s) { if (!sh && /question/i.test(s.getName())) sh = s; });
+  }
+  if (!sh) throw new Error('Onglet des questions introuvable. Renseigne SHEET_NAME.');
+
+  var data = sh.getDataRange().getValues();
+  var norm = function (s) { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+  var head = data[0].map(norm);
+  var find = function (names, fallback) {
+    for (var i = 0; i < head.length; i++) if (names.indexOf(head[i]) >= 0) return i;
+    return fallback;
+  };
+  // Colonnes détectées par leur titre ; sinon ordre habituel : id, matière, niveau, question, 4 choix, réponse, explication
+  var C = {
+    id:   find(['id', 'idquestion', 'questionid'], 0),
+    mat:  find(['matiere', 'subject'], 1),
+    niv:  find(['niveau', 'level', 'difficulte'], 2),
+    q:    find(['question', 'enonce'], 3),
+    c1:   find(['choix1', 'c1', 'optiona', 'a'], 4),
+    c2:   find(['choix2', 'c2', 'optionb', 'b'], 5),
+    c3:   find(['choix3', 'c3', 'optionc', 'c'], 6),
+    c4:   find(['choix4', 'c4', 'optiond', 'd'], 7),
+    rep:  find(['bonnereponse', 'reponse', 'rep', 'correct', 'answer'], 8),
+    expl: find(['explication', 'explanation'], 9)
+  };
+
+  var out = [], skipped = 0;
+  for (var r = 1; r < data.length; r++) {
+    var row = data[r];
+    var question = String(row[C.q] || '').trim();
+    if (!question) { skipped++; continue; }
+    var choix = [row[C.c1], row[C.c2], row[C.c3], row[C.c4]].map(function (c) { return String(c == null ? '' : c).trim(); });
+    if (choix.some(function (c) { return !c; })) { skipped++; continue; }
+    out.push({
+      id: String(row[C.id] || ''),
+      matiere: String(row[C.mat] || '').trim(),
+      niveau: String(row[C.niv] || '').trim().toLowerCase(),
+      question: question,
+      choix: choix,
+      bonne_reponse: row[C.rep],
+      explication: String(row[C.expl] || '').trim()
+    });
+  }
+
+  var json = JSON.stringify(out);
+  var file = DriveApp.createFile('questions.json', json, MimeType.PLAIN_TEXT);
+  Logger.log('✅ ' + out.length + ' questions exportées (' + skipped + ' lignes ignorées).');
+  Logger.log('Colonne réponse lue : "' + data[0][C.rep] + '" — valeurs vues : ' + out.slice(0, 8).map(function (q) { return q.bonne_reponse; }).join(', '));
+  Logger.log('Fichier : ' + file.getUrl());
+}
