@@ -1,101 +1,75 @@
-// ════════════════════════════════════════════════════════
-// baccPRO — Service Worker (mode "presque hors-ligne")
-//
+// baccPRO — Service Worker (fonctionnement hors-ligne)
 // Stratégie :
-//  - App shell (HTML/CSS/JS/icônes) → cache-first, avec mise à
-//    jour silencieuse en arrière-plan (stale-while-revalidate).
-//  - Appels API (script.google.com) → réseau uniquement.
-//    Impossible de faire fonctionner login/quiz/scores sans
-//    connexion, puisqu'ils dépendent de Google Sheets en direct.
-//    En cas d'échec réseau, on renvoie un JSON d'erreur clair
-//    que le frontend peut détecter (offline: true).
-// ════════════════════════════════════════════════════════
+//  • index.html      : cache d'abord (démarrage instantané, même sans réseau) + mise à jour en arrière-plan
+//  • questions.json  : réseau d'abord (5 s max) puis cache → toujours à jour quand internet est là
+//  • autres fichiers : cache d'abord + mise à jour en arrière-plan
+//  • Apps Script, Google Sign-In, APK : jamais interceptés
+const VERSION = 'baccpro-v1';
+const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './questions.json', './conditions.html', './google-sign-in.js'];
 
-const CACHE_NAME = 'baccpro-shell-v2';
-
-// Fichiers de l'app shell à précharger à l'installation.
-// Chemins relatifs : fonctionne quel que soit le sous-dossier
-// GitHub Pages (racine ou /nom-du-repo/).
-const APP_SHELL = [
-  './',
-  './index.html',
-  './google-sign-in.js',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-512-maskable.png',
-];
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      Promise.all(
-        APP_SHELL.map((url) =>
-          cache.add(url).catch((err) => {
-            // Un fichier manquant ne doit pas bloquer toute l'installation
-            console.warn('[SW] Précache raté pour', url, err);
-          })
-        )
-      )
-    )
+self.addEventListener('install', function (e) {
+  e.waitUntil(
+    caches.open(VERSION).then(function (c) {
+      // add() un par un : un fichier absent ne fait pas échouer toute l'installation
+      return Promise.all(SHELL.map(function (u) { return c.add(new Request(u, { cache: 'reload' })).catch(function () {}); }));
+    }).then(function () { return self.skipWaiting(); })
   );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-        )
-      )
-      .then(() => self.clients.claim())
+self.addEventListener('activate', function (e) {
+  e.waitUntil(
+    caches.keys().then(function (keys) {
+      return Promise.all(keys.filter(function (k) { return k !== VERSION; }).map(function (k) { return caches.delete(k); }));
+    }).then(function () { return self.clients.claim(); })
   );
 });
 
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-
-  // On ne gère que les requêtes GET — les POST (API) passent tel quel
+self.addEventListener('fetch', function (e) {
+  const req = e.request;
   if (req.method !== 'GET') return;
+  const url = new URL(req.url);
 
-  const url = req.url;
+  if (url.hostname === 'script.google.com' || url.hostname.endsWith('googleusercontent.com') ||
+      url.hostname === 'accounts.google.com' || url.hostname.endsWith('gstatic.com') && url.hostname !== 'fonts.gstatic.com') return;
+  if (/\.apk$/i.test(url.pathname)) return;
 
-  // ── Appels vers le backend Apps Script : réseau uniquement ──
-  if (url.includes('script.google.com') || url.includes('googleapis.com')) {
-    event.respondWith(
-      fetch(req).catch(
-        () =>
-          new Response(
-            JSON.stringify({
-              success: false,
-              offline: true,
-              message: 'Hors ligne — cette action nécessite une connexion internet.',
-            }),
-            { status: 503, headers: { 'Content-Type': 'application/json' } }
-          )
-      )
-    );
+  if (url.origin === location.origin) {
+    if (url.pathname.endsWith('/questions.json')) { e.respondWith(networkFirst(req, 5000)); return; }
+    // Toute ouverture de page dans le scope (start_url de l'APK, avec ou sans « / » final,
+    // avec ou sans paramètres) reçoit l'application depuis le cache, même sans réseau.
+    if (req.mode === 'navigate' && !url.pathname.endsWith('/conditions.html')) { e.respondWith(appShell(req)); return; }
+    e.respondWith(staleWhileRevalidate(req));
     return;
   }
-
-  // ── App shell : cache-first + rafraîchissement en arrière-plan ──
-  event.respondWith(
-    caches.match(req).then((cached) => {
-      const networkFetch = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200 && res.type === 'basic') {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
-          }
-          return res;
-        })
-        .catch(() => cached); // hors ligne → on retombe sur le cache
-
-      // Sert le cache immédiatement si dispo, sinon attend le réseau
-      return cached || networkFetch;
-    })
-  );
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+    e.respondWith(staleWhileRevalidate(req));
+  }
 });
+
+async function appShell(req) {
+  const cache = await caches.open(VERSION);
+  const cached = (await cache.match('./index.html', { ignoreSearch: true })) || (await cache.match('./', { ignoreSearch: true }));
+  const net = fetch(req).then(function (r) { if (r && r.ok) cache.put('./index.html', r.clone()); return r; }).catch(function () { return null; });
+  if (cached) return cached;
+  return (await net) || new Response('Hors-ligne : ouvre l\'application une fois avec internet.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+}
+
+async function networkFirst(req, ms) {
+  const cache = await caches.open(VERSION);
+  try {
+    const r = await Promise.race([fetch(req), new Promise(function (_, rej) { setTimeout(rej, ms); })]);
+    if (r && r.ok) cache.put(req, r.clone());
+    return r;
+  } catch (_) {
+    const c = await cache.match(req, { ignoreSearch: true });
+    return c || new Response('[]', { status: 503, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+async function staleWhileRevalidate(req) {
+  const cache = await caches.open(VERSION);
+  const cached = await cache.match(req, { ignoreSearch: true });
+  const net = fetch(req).then(function (r) { if (r && (r.ok || r.type === 'opaque')) cache.put(req, r.clone()); return r; }).catch(function () { return null; });
+  if (cached) return cached;
+  return (await net) || new Response('', { status: 504 });
+}
