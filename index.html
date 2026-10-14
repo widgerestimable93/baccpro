@@ -1489,6 +1489,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
       <button class="btn btn-accent" onclick="showPage('auth','register')">🚀 Commencer</button>
       <button class="btn btn-outline" onclick="showPage('auth','login')">Se connecter</button>
     </div>
+    <button class="btn btn-outline" id="notif-home-button" type="button" onclick="requestNotifPermission()" style="max-width:340px;margin:0 auto 18px">🔔 Activer le rappel de 17 h</button>
     <div class="home-features">
       <div class="home-feat"><div class="icon">📚</div><div class="label">7 matières NS4</div></div>
       <div class="home-feat"><div class="icon">⏱️</div><div class="label">Mode Examen</div></div>
@@ -1909,7 +1910,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
       <div class="notif-card-icon">🔔</div>
       <div class="notif-card-info">
         <div class="notif-card-title">Rappels quotidiens</div>
-        <div class="notif-card-desc">Ne perds jamais ton streak — reçois un rappel chaque soir</div>
+        <div class="notif-card-desc">Reçois un rappel quotidien à 17 h, même lorsque baccPRO est fermé.</div>
       </div>
       <div class="notif-status" id="notif-status">Activer</div>
     </div>
@@ -3521,58 +3522,105 @@ _applyAnswerFeedback = function(index, clickedBtn, q, isOk, pts, correctIdx){
 // PHASE 4 — NOTIFICATIONS
 // ════════════════════════════════════════════════════════
 
-function requestNotifPermission(){
-  const statusEl = document.getElementById('notif-status');
-  if (!('Notification' in window)){
-    showToast('Notifications non supportées sur ce navigateur.','error');
-    return;
-  }
-  if (Notification.permission === 'granted'){
-    showToast('✅ Notifications déjà activées !','success');
-    if (statusEl) statusEl.textContent = '✅ Activé';
-    return;
-  }
-  Notification.requestPermission().then(perm=>{
-    if (perm === 'granted'){
-      showToast('🔔 Notifications activées !','success');
-      if (statusEl) statusEl.textContent = '✅ Activé';
-      localStorage.setItem('notif_enabled','1');
-      // Programmer un rappel local (simule le rappel serveur)
-      _scheduleLocalReminder();
-    } else {
-      showToast('Notifications refusées.','error');
-    }
-  });
+const BACC_PUSH_API = 'https://us-central1-baccpro-app.cloudfunctions.net/pushApi';
+const BACC_REMINDER_KEY = 'baccpro_webpush_enabled';
+
+function baccUrlBase64ToBytes(value) {
+  const padding = '='.repeat((4 - value.length % 4) % 4);
+  const raw = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, function (c) { return c.charCodeAt(0); });
 }
 
-function _scheduleLocalReminder(){
-  // Rappel local dans 22h si l'app est ouverte (limites du navigateur)
-  const h22 = 22 * 3600 * 1000;
-  setTimeout(()=>{
-    if (Notification.permission === 'granted'){
-      new Notification('🔥 baccPRO — Ne perds pas ton streak !', {
-        body: "Fais au moins un quiz aujourd'hui !",
-        icon: '/favicon.ico',
+async function requestNotifPermission() {
+  const statusEl = document.getElementById('notif-status');
+  if (localStorage.getItem(BACC_REMINDER_KEY) === '1') {
+    await disableBaccReminder();
+    return;
+  }
+  const homeBtn = document.getElementById('notif-home-button');
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    showToast('Les rappels push ne sont pas compatibles avec ce navigateur.', 'error');
+    return;
+  }
+  const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const isInstalled = window.navigator.standalone === true
+    || window.matchMedia('(display-mode: standalone)').matches;
+  if (isAppleMobile && !isInstalled) {
+    showToast('Ajoute baccPRO à l’écran d’accueil, ouvre-le depuis cette icône, puis active le rappel.', 'info');
+    return;
+  }
+  try {
+    if (Notification.permission !== 'granted') {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        showToast('Autorise les notifications pour recevoir le rappel de 17 h.', 'error');
+        return;
+      }
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const keyResponse = await fetch(BACC_PUSH_API + '/public-key', { cache: 'no-store' });
+      if (!keyResponse.ok) throw new Error('Clé push indisponible');
+      const key = await keyResponse.json();
+      if (!key.publicKey) throw new Error('Clé push non configurée');
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: baccUrlBase64ToBytes(key.publicKey)
       });
     }
-  }, h22);
-}
 
-function _updateNotifCard(){
-  const statusEl = document.getElementById('notif-status');
-  if (!statusEl) return;
-  if (!('Notification' in window)){
-    statusEl.textContent='Non supporté';
-  } else if (Notification.permission === 'granted'){
-    statusEl.textContent='✅ Activé';
-  } else if (Notification.permission === 'denied'){
-    statusEl.textContent='Bloqué';
-  } else {
-    statusEl.textContent='Activer';
+    const response = await fetch(BACC_PUSH_API + '/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'subscribe', app: 'baccpro', subscription: subscription.toJSON() })
+    });
+    if (!response.ok) throw new Error('Enregistrement du rappel impossible');
+    localStorage.setItem(BACC_REMINDER_KEY, '1');
+    if (statusEl) statusEl.textContent = '✅ 17 h';
+    if (homeBtn) homeBtn.textContent = '✅ Rappel de 17 h activé';
+    showToast('Rappel quotidien activé pour 17 h, heure d’Haïti.', 'success');
+  } catch (error) {
+    console.error('[rappel] Activation impossible', error);
+    showToast('Le service de rappels n’est pas encore déployé ou la connexion a échoué.', 'error');
   }
 }
 
-// ════════════════════════════════════════════════════════
+async function disableBaccReminder() {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      try {
+        await fetch(BACC_PUSH_API + '/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'unsubscribe', endpoint: subscription.endpoint })
+        });
+      } catch (error) {
+        console.error('[rappel] Suppression serveur impossible', error);
+      }
+      await subscription.unsubscribe();
+    }
+  } catch (error) {
+    console.error('[rappel] Désactivation impossible', error);
+  }
+  localStorage.removeItem(BACC_REMINDER_KEY);
+  _updateNotifCard();
+  showToast('Rappel quotidien désactivé.', 'info');
+}
+
+function _updateNotifCard() {
+  const statusEl = document.getElementById('notif-status');
+  const homeBtn = document.getElementById('notif-home-button');
+  const enabled = localStorage.getItem(BACC_REMINDER_KEY) === '1';
+  if (statusEl) statusEl.textContent = enabled ? '✅ 17 h' : 'Activer';
+  if (homeBtn) homeBtn.textContent = enabled ? '✅ Rappel de 17 h activé' : '🔔 Activer le rappel de 17 h';
+}
+
+document.addEventListener('DOMContentLoaded', _updateNotifCard);
+
 // PHASE 6 — SÉCURITÉ FRONTEND
 // ════════════════════════════════════════════════════════
 

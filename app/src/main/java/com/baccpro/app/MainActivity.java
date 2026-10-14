@@ -1,10 +1,13 @@
 package com.baccpro.app;
 
 import android.annotation.SuppressLint;
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -37,6 +40,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+
+    private static final int REQUEST_NOTIFICATION_PERMISSION = 17;
 
     private static final String APP_URL =
         "https://widgerestimable93.github.io/baccpro/";
@@ -89,6 +94,26 @@ public class MainActivity extends Activity {
         setupWebView();
         pendingGoogleCallback = getIntent() == null ? null : getIntent().getData();
         webView.loadUrl(APP_URL);
+        ReminderScheduler.scheduleDaily(this);
+        requestNotificationPermissionIfNeeded();
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQUEST_NOTIFICATION_PERMISSION);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_NOTIFICATION_PERMISSION
+                && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            ReminderScheduler.scheduleDaily(this);
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")

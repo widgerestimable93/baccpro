@@ -1,0 +1,17 @@
+{
+  "name": "baccpro-push-functions",
+  "private": true,
+  "description": "Web Push reminders for baccPRO and 9emePRO",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.2",
+    "web-push": "^3.6.7"
+  }
+}
