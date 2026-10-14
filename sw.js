@@ -4,7 +4,7 @@
 //  • questions.json  : réseau d'abord (5 s max) puis cache → toujours à jour quand internet est là
 //  • autres fichiers : cache d'abord + mise à jour en arrière-plan
 //  • Apps Script, Google Sign-In, APK : jamais interceptés
-const VERSION = 'baccpro-v1';
+const VERSION = 'baccpro-v2';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-512-maskable.png', './questions.json', './conditions.html', './google-sign-in.js'];
 
 self.addEventListener('install', function (e) {
@@ -73,3 +73,28 @@ async function staleWhileRevalidate(req) {
   if (cached) return cached;
   return (await net) || new Response('', { status: 504 });
 }
+
+
+self.addEventListener('push', function (event) {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch (_) {}
+  const options = {
+    body: payload.body || 'Il est 17 h. Prends quelques minutes pour réviser.',
+    icon: new URL('./icon-192.png', self.registration.scope).href,
+    badge: new URL('./icon-192.png', self.registration.scope).href,
+    tag: (payload.app || 'study') + '-daily-reminder',
+    data: { url: payload.url || self.registration.scope }
+  };
+  event.waitUntil(self.registration.showNotification(payload.title || 'Rappel de révision', options));
+});
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close();
+  const target = new URL(event.notification.data && event.notification.data.url
+    ? event.notification.data.url : './', self.registration.scope).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (clients) {
+    const existing = clients.find(function (client) { return client.url.indexOf(target) === 0; });
+    if (existing) return existing.focus();
+    return self.clients.openWindow(target);
+  }));
+});
