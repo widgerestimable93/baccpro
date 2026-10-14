@@ -3615,6 +3615,8 @@ function _updateNotifCard() {
   if (homeBtn) homeBtn.textContent = enabled ? '✅ Rappel de 17 h activé' : '🔔 Activer le rappel de 17 h';
 }
 
+document.addEventListener('DOMContentLoaded', _updateNotifCard);
+
 // PHASE 6 — SÉCURITÉ FRONTEND
 // ════════════════════════════════════════════════════════
 
