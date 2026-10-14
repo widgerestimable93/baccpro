@@ -1,25 +1,29 @@
-# Web Push quotidien à 17 h (heure d’Haïti)
+# Web Push quotidien à 17 h, heure d’Haïti
 
-Ce backend envoie un rappel aux abonnements PWA baccPRO et 9emePRO. Les abonnements sont enregistrés dans Firestore; une fonction planifiée envoie les notifications chaque jour à 17 h dans le fuseau `America/Port-au-Prince`.
+Ce backend envoie un rappel aux abonnements PWA baccPRO et 9emePRO. Les abonnements sont stockés dans Firestore; une fonction planifiée envoie les notifications chaque jour à 17 h dans le fuseau `America/Port-au-Prince`.
 
 ## Préparer Firebase
 
-1. Le projet configuré est `baccpro-app`. Active Firestore et le plan Firebase Blaze pour déployer des fonctions planifiées. La facturation Google Cloud doit être activée pour ce projet.
-2. Installe les dépendances et Firebase CLI, puis connecte-toi avec le compte qui administre le projet.
-3. Génère une paire VAPID avec `npx web-push generate-vapid-keys`.
-4. Copie `.env.example` en `.env.baccpro-app` et renseigne la clé publique ainsi que l’adresse e-mail de contact VAPID.
-5. Dans le dossier du dépôt, configure la clé privée sans l’ajouter à Git :
+1. Le projet configuré est `baccpro-app`. Connecte-toi avec un compte qui l’administre et active Firestore.
+2. Les fonctions planifiées Firebase nécessitent le plan Blaze et les API Cloud Scheduler / Pub/Sub. Vérifie les options de facturation et configure une alerte de budget avant le déploiement.
+3. Installe les dépendances dans `functions`, puis génère une paire VAPID :
+
+   ```sh
+   cd functions
+   npm install
+   npx web-push generate-vapid-keys
+   ```
+
+4. Copie `.env.example` vers `.env.baccpro-app` et ajoute la clé publique ainsi qu’une adresse e-mail de contact VAPID. Le fichier `.env.baccpro-app` est exclu de Git.
+5. Depuis la racine du dépôt, enregistre la clé privée comme secret Firebase :
 
    ```sh
    firebase functions:secrets:set WEB_PUSH_PRIVATE_KEY --project baccpro-app
    ```
 
-6. Depuis la racine du dépôt, installe les dépendances dans `functions`, puis déploie :
+6. Déploie les fonctions depuis la racine du dépôt :
 
    ```sh
-   cd functions
-   npm install
-   cd ..
    firebase deploy --only functions --project baccpro-app
    ```
 
