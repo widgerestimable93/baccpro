@@ -3533,6 +3533,10 @@ function baccUrlBase64ToBytes(value) {
 
 async function requestNotifPermission() {
   const statusEl = document.getElementById('notif-status');
+  if (localStorage.getItem(BACC_REMINDER_KEY) === '1') {
+    await disableBaccReminder();
+    return;
+  }
   const homeBtn = document.getElementById('notif-home-button');
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     showToast('Les rappels push ne sont pas compatibles avec ce navigateur.', 'error');
