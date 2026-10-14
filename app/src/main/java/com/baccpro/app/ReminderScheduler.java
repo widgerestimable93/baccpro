@@ -11,6 +11,7 @@ import android.media.RingtoneManager;
 import android.os.Build;
 
 import java.util.Calendar;
+import java.util.TimeZone;
 
 public final class ReminderScheduler {
     static final String CHANNEL_ID = "baccpro_daily_reminder";
@@ -50,7 +51,7 @@ public final class ReminderScheduler {
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        Calendar next = Calendar.getInstance();
+        Calendar next = Calendar.getInstance(TimeZone.getTimeZone("America/Port-au-Prince"));
         next.set(Calendar.HOUR_OF_DAY, REMINDER_HOUR);
         next.set(Calendar.MINUTE, 0);
         next.set(Calendar.SECOND, 0);
