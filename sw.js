@@ -82,7 +82,7 @@ self.addEventListener('push', function (event) {
     body: payload.body || 'Il est 17 h. Prends quelques minutes pour réviser.',
     icon: new URL('./icon-192.png', self.registration.scope).href,
     badge: new URL('./icon-192.png', self.registration.scope).href,
-    tag: (payload.app || 'study') + '-daily-' + new Date().toISOString().slice(0, 10),
+    tag: (payload.app || 'study') + '-daily-reminder',
     renotify: true,
     silent: false,
     vibrate: [200, 100, 200],
