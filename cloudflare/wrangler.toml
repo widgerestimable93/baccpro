@@ -1,0 +1,28 @@
+name = "baccpro-daily-push"
+main = "worker.js"
+compatibility_date = "2026-10-14"
+workers_dev = true
+
+[vars]
+APP_ORIGIN = "https://widgerestimable93.github.io"
+VAPID_SUBJECT = "https://widgerestimable93.github.io/baccpro/"
+
+[triggers]
+# Cloudflare cron uses UTC. The Worker checks the Haiti timezone each hour.
+crons = ["0 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "baccpro-push"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[queues.producers]]
+binding = "PUSH_QUEUE"
+queue = "baccpro-daily-push"
+
+[[queues.consumers]]
+queue = "baccpro-daily-push"
+max_batch_size = 1
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "baccpro-daily-push-dead"

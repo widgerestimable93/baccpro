@@ -111,10 +111,16 @@
           return;
         }
         window.location.assign(response.url);
-      }).withFailureHandler(function () {
+      }).withFailureHandler(function (error) {
         if (mobile) localStorage.removeItem(PENDING_KEY);
         setButtonBusy(false);
-        setGoogleError('Erreur réseau. Vérifie ta connexion et réessaie.');
+        var detail = error && typeof error.message === 'string' ? error.message : '';
+        if (detail && detail.indexOf('Échec du chargement JSONP') !== 0 &&
+            detail.indexOf('Délai dépassé') !== 0) {
+          setGoogleError('Le service Apps Script a refusé la connexion : ' + detail);
+        } else {
+          setGoogleError('Le service de connexion ne répond pas. Vérifie ta connexion puis réessaie.');
+        }
       }).googleAuthStart(mode, clientState, codeChallenge);
     };
 
@@ -176,7 +182,8 @@
       }
       try { localStorage.removeItem(PENDING_KEY); } catch (storageError) {}
       App.user = response.user;
-      saveToken(response.token); if (window.BaccproOffline) window.BaccproOffline.onAuthenticated(response.user, true);
+      saveToken(response.token);
+      if (window.BaccproOffline) window.BaccproOffline.onAuthenticated(response.user, true);
       showToast('Bienvenue ! 👋', 'success');
       showPage('dashboard');
       setTimeout(function () {

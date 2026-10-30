@@ -507,6 +507,22 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
   font-size:.78rem;color:var(--text2);line-height:1.5}
 [data-theme="light"] .expl-footer{background:rgba(245,127,23,.04);border-color:rgba(245,127,23,.12)}
 
+.expl-voice{padding:12px 14px;background:var(--card);border-top:1px solid var(--border2)}
+.expl-voice-controls{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.expl-voice button,.expl-voice select{min-height:44px;border-radius:10px;border:1px solid var(--border2);background:var(--inp);color:var(--text);font:inherit;padding:8px 12px}
+.expl-voice button{cursor:pointer;font-weight:700}
+.expl-voice button:disabled{opacity:.48;cursor:default}
+.expl-voice .voice-primary{background:var(--blue);color:#fff;border-color:transparent}
+.expl-voice select{max-width:100%;font-size:.8rem}
+.expl-voice-status{min-height:1.25em;margin-top:7px;color:var(--text2);font-size:.76rem}
+.expl-voice-status[aria-live]{line-height:1.4}
+.expl-voice-status.is-playing{color:var(--ok);font-weight:700}
+.expl-empty{display:none;padding:12px 14px;color:var(--text2);font-size:.8rem;line-height:1.45}
+.expl-empty.show{display:block}
+.expl-voice .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.voice-auto-label{display:flex;align-items:center;gap:6px;min-height:44px;padding:0 4px;color:var(--text2);font-size:.78rem}
+.voice-auto-label input{width:20px;height:20px;accent-color:var(--blue)}
+
 /* ══ QUIZ FOOTER ════════════════════════════════════════ */
 .quiz-footer{padding:clamp(12px,3vw,16px) var(--pad);background:var(--nav);border-top:1px solid var(--border)}
 /* ══ RÉSULTATS ══════════════════════════════════════════ */
@@ -1761,7 +1777,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
         <span class="expl-ca-label">✅ Bonne réponse :</span>
         <span class="expl-ca-text" id="expl-ca-text"></span>
       </div>
-      <div class="expl-body">
+      <div class="expl-body" id="expl-body">
         <div class="expl-resume" id="expl-resume"></div>
         <div class="expl-points" id="expl-points"></div>
         <div class="expl-formule" id="expl-formule" style="display:none"></div>
@@ -1769,6 +1785,25 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);
       <div class="expl-footer" id="expl-footer">
         <span>💡</span><span id="expl-conseil"></span>
       </div>
+      <div class="expl-voice" id="expl-voice" aria-label="Synthèse vocale de l’explication">
+        <div class="expl-voice-controls">
+          <label class="voice-auto-label"><input type="checkbox" id="voice-auto" onchange="BaccproVoice.setAutoRead(this.checked)"> Lecture automatique</label>
+          <button type="button" class="voice-primary" id="voice-play" onclick="BaccproVoice.play()" aria-label="Écouter l'explication">🔊 Écouter l'explication</button>
+          <button type="button" id="voice-pause" onclick="BaccproVoice.pause()" disabled aria-label="Mettre en pause">Pause</button>
+          <button type="button" id="voice-resume" onclick="BaccproVoice.resume()" disabled aria-label="Reprendre la lecture">Reprise</button>
+          <button type="button" id="voice-stop" onclick="BaccproVoice.stop()" disabled aria-label="Arrêter la lecture">Arrêt</button>
+          <button type="button" id="voice-replay" onclick="BaccproVoice.replay()" disabled aria-label="Réécouter l'explication">Réécouter</button>
+          <label for="voice-rate" class="sr-only">Vitesse de lecture</label>
+          <select id="voice-rate" aria-label="Vitesse de lecture" onchange="BaccproVoice.setRate(this.value)">
+            <option value="0.8">0,8×</option><option value="1" selected>1×</option><option value="1.2">1,2×</option><option value="1.5">1,5×</option>
+          </select>
+          <label for="voice-choice" class="sr-only">Voix française</label>
+          <select id="voice-choice" aria-label="Choisir une voix française"></select>
+        </div>
+        <div id="voice-status" class="expl-voice-status" role="status" aria-live="polite"></div>
+        <button type="button" id="voice-settings" style="display:none" onclick="BaccproVoice.openSettings()">Configurer les voix Android</button>
+      </div>
+      <div id="expl-empty" class="expl-empty" role="status"></div>
     </div>
   </div>
   <div class="quiz-footer" id="quiz-footer">
@@ -2209,6 +2244,7 @@ function clearToken(){ App.token=null; localStorage.removeItem('bp_token'); }
 // NAVIGATION
 // ════════════════════════════════════════════════════════
 function showPage(pageId,extra){
+  if(pageId!=='quiz' && window.BaccproVoice) window.BaccproVoice.stop(true);
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const page=document.getElementById('page-'+pageId);
   if(page){ page.classList.add('active'); window.scrollTo(0,0); }
@@ -2358,12 +2394,39 @@ function startQuiz(){
   showLoader('Chargement des questions…');
   const mode=(App.quizNiveau!=='tous'&&App.token)?'adaptive':'normal';
 
+  function _startWithQuestions(res, offline){
+    hideLoader();
+    if(!res||!res.success||!res.questions||!res.questions.length) return false;
+    App.questions=res.questions; App.quizSessionId=offline?null:(res.quizSessionId||null);
+    App._offlineQuiz=!!offline;
+    App.currentQ=0; App.score=0; App.answers=[];
+    App.streak=0; App.maxStreak=0; App.lives=3;
+    App._answerCache={};
+    if(res.quizAnswers&&typeof res.quizAnswers==='object') App._answerCache=res.quizAnswers;
+    else if(window._mockAnswerCache) App._answerCache=window._mockAnswerCache;
+    stopTimer(); _stopQTimer();
+    showPage('quiz');
+    Music.start();
+    _resetFeedbackOverlay(); _renderLives(); _renderStreak();
+    renderQuestion();
+    if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
+    if(offline) showToast('Quiz depuis le cache — résultat non synchronisé.','info');
+    return true;
+  }
+
+  function _startFromOfflineCache(){
+    const cached = window.BaccproOffline && window.BaccproOffline.makeQuiz({
+      matiere:App.quizMatiere, niveau:App.quizNiveau, limit:App.quizQty
+    });
+    if(!_startWithQuestions(cached, true)) return false;
+    return true;
+  }
+
   // ── Charger les questions (après reset de la session si connecté) ─
   function _doLoadQuestions(){
     if(!navigator.onLine){_startOfflineQuizFromCache();return;}
     google.script.run
       .withSuccessHandler(res=>{
-        hideLoader();
         if(!res.success||!res.questions||!res.questions.length){
           if(!(_offlineAllowed()&&_startOfflineQuizFromCache()))showToast('Aucune question trouvée pour ce niveau/matière.','error'); return;
         }
@@ -2499,6 +2562,7 @@ function _onQTimerExpire(){
 // SÉLECTION RÉPONSE
 // ════════════════════════════════════════════════════════
 function selectAnswer(index,clickedBtn,q){
+  BaccproVoice.stop(true);
   document.querySelectorAll('.choice-btn').forEach(b=>b.disabled=true);
   _stopQTimer();
   const localIdx=App._answerCache[q.id];
@@ -2604,6 +2668,7 @@ function _spawnConfetti(count){
 // NAVIGATION QUESTIONS
 // ════════════════════════════════════════════════════════
 function nextQuestion(){
+  BaccproVoice.stop(true);
   App.currentQ++; renderQuestion(); window.scrollTo(0,0);
   if(App._tpq&&App._tpq>0) _startQTimer(App._tpq);
 }
@@ -2612,9 +2677,104 @@ function finishQuiz(){ stopTimer(); _stopQTimer(); Music.stop(); saveScoreToServ
 // ════════════════════════════════════════════════════════
 // EXPLICATION
 // ════════════════════════════════════════════════════════
+const BaccproVoice = (() => {
+  const state = { text:'', voices:[], current:null, browserUtterance:null, cursor:0, paused:false, speaking:false, rate:1, native:false, autoRead:false };
+  const $ = id => document.getElementById(id);
+  const voiceSelect = () => $('voice-choice');
+  function nativeBridge(){ return window.BaccproTts && typeof window.BaccproTts.getVoicesJson==='function' ? window.BaccproTts : null; }
+  function normalizeSpeech(value){
+    let s=String(value||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ');
+    const words={'×':' fois ','÷':' divisé par ','=':' égal à ','+':' plus ','−':' moins ','→':' donne ','≈':' environ égal à ','≠':' différent de ','≥':' supérieur ou égal à ','≤':' inférieur ou égal à ','√':' racine carrée de ','∑':' somme de ','π':' pi ','α':' alpha ','β':' bêta ','γ':' gamma ','Δ':' delta ','²':' au carré ','³':' au cube ','¹':' puissance un ','₀':' zéro ','₁':' un ','₂':' deux ','₃':' trois ','₄':' quatre ','₅':' cinq ','₆':' six ','₇':' sept ','₈':' huit ','₉':' neuf '};
+    Object.keys(words).forEach(k=>s=s.split(k).join(words[k]));
+    s=s.replace(/\bADN\b/gi,'A D N').replace(/\bATP\b/gi,'A T P').replace(/\bSVT\b/gi,'S V T').replace(/\bCO2\b/gi,'CO deux').replace(/\bH2O\b/gi,'H deux O');
+    return s.replace(/\s+/g,' ').trim();
+  }
+  function setStatus(text,active){ const el=$('voice-status'); if(!el)return; el.textContent=text||''; el.classList.toggle('is-playing',!!active); }
+  function refreshButtons(){
+    const can=!!state.text&&state.voices.length>0;
+    $('voice-play').disabled=!can||state.speaking||state.paused;
+    $('voice-pause').disabled=!state.speaking;
+    $('voice-resume').disabled=!state.paused;
+    $('voice-stop').disabled=!state.speaking&&!state.paused;
+    $('voice-replay').disabled=!can||state.speaking;
+  }
+  function loadVoices(){
+    const native=nativeBridge(); let list=[];
+    if(native){
+      state.native=true;
+      try{ list=JSON.parse(native.getVoicesJson()||'[]').filter(v=>/^fr(?:-|$)/i.test(v.lang||'' )).map(v=>({id:'native:'+v.name,name:v.name,lang:v.lang,local:!v.networkRequired,native:true})); }catch(e){list=[];}
+    } else if(window.speechSynthesis&&window.SpeechSynthesisUtterance){
+      state.native=false;
+      list=window.speechSynthesis.getVoices().filter(v=>/^fr(?:-|$)/i.test(v.lang||'')).map(v=>({id:'web:'+v.voiceURI,name:v.name,lang:v.lang,local:!!v.localService,native:false,voice:v}));
+    }
+    state.voices=list;
+    const select=voiceSelect(); if(!select)return;
+    const previous=localStorage.getItem('baccpro-voice-name')||select.value;
+    select.innerHTML=list.map(v=>`<option value="${escHTML(v.id)}">${escHTML(v.name)} — ${escHTML(v.lang)}${v.local?' · hors ligne':' · connexion possible'}</option>`).join('');
+    if(list.some(v=>v.id===previous))select.value=previous;
+    else { const preferred=list.find(v=>/^fr-FR$/i.test(v.lang))||list[0]; if(preferred)select.value=preferred.id; }
+    const settingsButton=$('voice-settings'); if(settingsButton)settingsButton.style.display=native&&!list.length?'inline-block':'none';
+    if(list.length){ $('voice-choice').onchange=()=>localStorage.setItem('baccpro-voice-name',select.value); setStatus('Lecture vocale prête. La mention « hors ligne » dépend de la voix sélectionnée.'); }
+    else if(native){ setStatus('Aucune voix française disponible. Active ou installe une voix française dans les paramètres de synthèse vocale Android.'); }
+    else { setStatus('Aucune voix française n’est installée ou exposée par ce navigateur. Active une voix française dans les réglages de l’appareil.'); }
+    refreshButtons();
+  }
+  function selectedVoice(){return state.voices.find(v=>v.id===voiceSelect().value)||state.voices.find(v=>/^fr-FR$/i.test(v.lang))||state.voices[0]||null;}
+  function cancelBrowser(){if(state.browserUtterance)state.browserUtterance._baccproCanceled=true;if(window.speechSynthesis)window.speechSynthesis.cancel();state.browserUtterance=null;}
+  function speakFrom(offset){
+    const voice=selectedVoice(); if(!voice){loadVoices();return;}
+    if(!navigator.onLine&&!voice.local){setStatus('Cette voix indique qu’une connexion peut être nécessaire. Choisis une voix marquée « hors ligne ».');return;}
+    state.cursor=Math.max(0,Math.min(offset||0,state.text.length)); state.current=voice; state.paused=false; state.speaking=true; refreshButtons();
+    setStatus('Lecture en cours…',true);
+    if(voice.native){ nativeBridge().speak(state.text,Number(state.rate)||1,voice.name,state.cursor); return; }
+    const synth=window.speechSynthesis; if(!synth){state.speaking=false;refreshButtons();setStatus('La synthèse vocale n’est pas prise en charge ici.');return;}
+    cancelBrowser(); const utterance=new SpeechSynthesisUtterance(state.text.slice(state.cursor)); utterance.lang=voice.lang; utterance.voice=voice.voice; utterance.rate=Number(state.rate)||1; state.browserUtterance=utterance;
+    const base=state.cursor;
+    utterance.onboundary=e=>{if(!utterance._baccproCanceled&&typeof e.charIndex==='number')state.cursor=base+e.charIndex;};
+    utterance.onend=()=>{if(utterance._baccproCanceled)return;state.cursor=state.text.length;state.speaking=false;state.paused=false;state.browserUtterance=null;refreshButtons();setStatus('Lecture terminée.');};
+    utterance.onerror=()=>{if(utterance._baccproCanceled)return;state.speaking=false;state.browserUtterance=null;refreshButtons();setStatus('La voix sélectionnée n’a pas pu lire ce texte. Essaie une autre voix française.');};
+    synth.speak(utterance);
+  }
+  function setExplanation(parts){
+    stop(true); state.text=normalizeSpeech(parts.filter(Boolean).join('. ')); loadVoices(); refreshButtons();
+    if(!state.text)setStatus('Explication audio indisponible : aucun texte pédagogique n’est fourni pour cette question.');
+    else if(state.autoRead)setTimeout(play,0);
+  }
+  function play(){if(!state.text){setStatus('Explication audio indisponible : aucun texte pédagogique n’est fourni pour cette question.');return;}speakFrom(0);}
+  function pause(){if(!state.speaking)return; if(state.current&&state.current.native){nativeBridge().stop();}else cancelBrowser(); state.speaking=false;state.paused=true;refreshButtons();setStatus('Lecture en pause.');}
+  function resume(){if(state.paused)speakFrom(state.cursor);}
+  function stop(silent){if(state.speaking||state.paused){if(state.current&&state.current.native&&nativeBridge())nativeBridge().stop();cancelBrowser();}state.speaking=false;state.paused=false;state.cursor=0;refreshButtons();if(!silent)setStatus('Lecture arrêtée.');}
+  function replay(){stop(true);speakFrom(0);}
+  function setRate(value){state.rate=Math.max(.7,Math.min(1.6,Number(value)||1));localStorage.setItem('baccpro-voice-rate',String(state.rate));}
+  function setAutoRead(value){state.autoRead=!!value;localStorage.setItem('baccpro-voice-auto',state.autoRead?'true':'false');}
+  function nativeBoundary(index){state.cursor=Math.min(state.text.length,Math.max(0,Number(index)||0));}
+  function nativeFinished(){state.speaking=false;state.paused=false;state.cursor=state.text.length;refreshButtons();setStatus('Lecture terminée.');}
+  function nativeFailure(){state.speaking=false;state.paused=false;refreshButtons();setStatus('La voix Android n’a pas pu lire ce texte. Vérifie les données de la voix sélectionnée.');}
+  function unavailable(){state.text='';stop(true);setStatus('Explication audio indisponible : aucune explication n’est fournie pour cette question.');}
+  function openSettings(){const bridge=nativeBridge();if(bridge&&typeof bridge.openVoiceSettings==='function')bridge.openVoiceSettings();else setStatus('Ouvre les réglages de synthèse vocale de ton appareil et active une voix française.');}
+  loadVoices();
+  if(window.speechSynthesis)window.speechSynthesis.addEventListener('voiceschanged',loadVoices);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)stop(true);});
+  const savedRate=Number(localStorage.getItem('baccpro-voice-rate'));if(savedRate){state.rate=savedRate;$('voice-rate').value=String(savedRate);}
+  state.autoRead=localStorage.getItem('baccpro-voice-auto')==='true';$('voice-auto').checked=state.autoRead;
+  return {play,pause,resume,stop,replay,setRate,setAutoRead,setExplanation,unavailable,nativeBoundary,nativeFinished,nativeFailure,refreshVoices:loadVoices,openSettings};
+})();
+window.BaccproVoice=BaccproVoice;
+
 function renderExplication(q){
-  const expl=q.explication; if(!expl) return;
+  const expl=q.explication;
   const box=document.getElementById('expl-box');
+  const contentIds=['expl-correct-answer','expl-body','expl-footer'];
+  const empty=document.getElementById('expl-empty');
+  BaccproVoice.stop(true);
+  if(!expl || !String(typeof expl==='object' ? (expl.resume||'')+(expl.bonneRep||'')+(expl.formule||'')+(expl.conseil||'')+(Array.isArray(expl.points)?expl.points.join(''):'') : expl).trim()){
+    contentIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
+    document.getElementById('expl-voice').style.display='none';
+    empty.textContent='Explication audio indisponible : aucune explication n’est fournie pour cette question.';
+    empty.classList.add('show'); box.classList.add('show'); BaccproVoice.unavailable(); return;
+  }
+  contentIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+  document.getElementById('expl-voice').style.display=''; empty.classList.remove('show');
 
   // ── Trouver le texte de la bonne réponse ─────────────────────────
   // Priorité 1 : expl.bonneRep contient le texte exact envoyé par le serveur
@@ -2647,6 +2807,11 @@ function renderExplication(q){
     const conseils={'Maths':'💡 Mémorise la formule et entraîne-toi avec des exemples.','Chimie':'🧪 Visualise la réaction pour mieux retenir.','Physique':'⚡ Associe la formule à son unité SI.','SVT':'🔬 Crée un schéma ou tableau comparatif.','Philo':'📚 Retiens auteur + œuvre + thèse en 1 phrase.','Philosophie':'📚 Retiens auteur + œuvre + thèse en 1 phrase.','Économie':'📊 Illustre avec un exemple concret.','Sc. Sociales':'🌍 Relie ce fait à un événement que tu connais.','Sciences Sociales':'🌍 Relie ce fait à un événement que tu connais.'};
     document.getElementById('expl-conseil').textContent=conseils[q.matiere]||'💡 Revois ce concept dans ton cours.';
   }
+  const speechParts=[];
+  if(bonneRepTexte) speechParts.push('Bonne réponse : '+bonneRepTexte);
+  if(typeof expl==='object'&&expl){ if(expl.resume)speechParts.push('Explication : '+expl.resume); (expl.points||[]).forEach((p,i)=>speechParts.push('Point clé '+(i+1)+' : '+p)); if(expl.formule)speechParts.push('Formule : '+expl.formule); if(expl.conseil)speechParts.push('À retenir : '+expl.conseil); }
+  else speechParts.push(String(expl));
+  BaccproVoice.setExplanation(speechParts);
   box.classList.add('show');
 }
 
@@ -3528,34 +3693,35 @@ function requestNotifPermission(){
     return;
   }
   if (Notification.permission === 'granted'){
-    showToast('✅ Notifications déjà activées !','success');
-    if (statusEl) statusEl.textContent = '✅ Activé';
+    showToast('Connexion au service de rappel…','success');
+    if (statusEl) statusEl.textContent = 'Configuration…';
+    _activateDailyPush();
     return;
   }
   Notification.requestPermission().then(perm=>{
     if (perm === 'granted'){
-      showToast('🔔 Notifications activées !','success');
-      if (statusEl) statusEl.textContent = '✅ Activé';
-      localStorage.setItem('notif_enabled','1');
-      // Programmer un rappel local (simule le rappel serveur)
-      _scheduleLocalReminder();
+      showToast('🔔 Autorisation reçue. Activation du rappel…','success');
+      if (statusEl) statusEl.textContent = 'Configuration…';
+      _activateDailyPush();
     } else {
       showToast('Notifications refusées.','error');
     }
   });
 }
 
-function _scheduleLocalReminder(){
-  // Rappel local dans 22h si l'app est ouverte (limites du navigateur)
-  const h22 = 22 * 3600 * 1000;
-  setTimeout(()=>{
-    if (Notification.permission === 'granted'){
-      new Notification('🔥 baccPRO — Ne perds pas ton streak !', {
-        body: "Fais au moins un quiz aujourd'hui !",
-        icon: '/favicon.ico',
-      });
-    }
-  }, h22);
+function _activateDailyPush(){
+  if (!window.BaccproDailyPush || typeof window.BaccproDailyPush.subscribe !== 'function'){
+    showToast('Notifications autorisées. La configuration du service Push est nécessaire pour le rappel à 17 h.','error');
+    return;
+  }
+  window.BaccproDailyPush.subscribe().then(function(){
+    showToast('🔔 Rappel quotidien activé pour 17 h.','success');
+    var statusEl = document.getElementById('notif-status');
+    if (statusEl) statusEl.textContent = '✅ Activé';
+  }).catch(function(error){
+    console.error('[baccPRO push] Inscription impossible:', error);
+    showToast('Le rappel à 17 h n’a pas pu être activé. Vérifie la configuration du service Push.','error');
+  });
 }
 
 function _updateNotifCard(){
@@ -3564,7 +3730,7 @@ function _updateNotifCard(){
   if (!('Notification' in window)){
     statusEl.textContent='Non supporté';
   } else if (Notification.permission === 'granted'){
-    statusEl.textContent='✅ Activé';
+    statusEl.textContent=localStorage.getItem('daily_push_registered') === '1' ? '✅ Activé' : 'Configurer';
   } else if (Notification.permission === 'denied'){
     statusEl.textContent='Bloqué';
   } else {
@@ -4418,6 +4584,9 @@ const OfflineMode = {
     if(OfflineMode._wasOffline){
       OfflineMode._wasOffline = false;
       console.log('[OfflineMode] Retour en ligne');
+    }
+    if(window.BaccproOffline && App.user && App.token){
+      window.BaccproOffline.syncQuestions(false);
     }
   }
 };
@@ -6217,7 +6386,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const hasToken  = !!localStorage.getItem('fcm_token');
 
     if (!isAndroid) {
-      statusEl.innerHTML = '🌐 <strong>Mode web</strong> — Les notifications push réelles nécessitent l\'APK Android.';
+      statusEl.innerHTML = '🌐 <strong>Mode web</strong> — Active le rappel Push pour le recevoir même lorsque la PWA est fermée.';
       statusEl.style.color = 'var(--warn)';
     } else if (hasPerm && hasToken) {
       statusEl.innerHTML = '✅ <strong>Actives</strong> — Notifications push configurées';
@@ -8134,6 +8303,8 @@ pueden hacer una gran diferencia para el planeta.`
 })();
 </script>
 <script src="./google-sign-in.js"></script>
+<script src="./push-config.js"></script>
+<script src="./baccpro-push-client.js"></script>
 
 </body>
 </html>
