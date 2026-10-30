@@ -29,11 +29,33 @@ jobs:
         with:
           gradle-version: '8.6'
 
-      - name: Build APK
-        run: gradle assembleDebug --no-daemon --warning-mode=all
+      - name: Prepare release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "::error::Add ANDROID_KEYSTORE_BASE64 to the repository Actions secrets."
+            exit 1
+          fi
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/baccpro-release.p12"
+          test -s "$RUNNER_TEMP/baccpro-release.p12"
 
-      - name: Upload APK
+      - name: Build signed APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/baccpro-release.p12
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_PASSWORD" || -z "$ANDROID_KEY_ALIAS" || -z "$ANDROID_KEY_PASSWORD" ]]; then
+            echo "::error::Add ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, and ANDROID_KEY_PASSWORD to the repository Actions secrets."
+            exit 1
+          fi
+          gradle assembleRelease --no-daemon --warning-mode=all
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: baccPRO-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: baccPRO-APK-signed
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error

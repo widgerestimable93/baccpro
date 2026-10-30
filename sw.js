@@ -1,17 +1,17 @@
 // ════════════════════════════════════════════════════════
-// baccPRO — Service Worker (mode "presque hors-ligne")
+// baccPRO — Service Worker (application + questions hors ligne)
 //
 // Stratégie :
 //  - App shell (HTML/CSS/JS/icônes) → cache-first, avec mise à
 //    jour silencieuse en arrière-plan (stale-while-revalidate).
 //  - Appels API (script.google.com) → réseau uniquement.
-//    Impossible de faire fonctionner login/quiz/scores sans
-//    connexion, puisqu'ils dépendent de Google Sheets en direct.
-//    En cas d'échec réseau, on renvoie un JSON d'erreur clair
-//    que le frontend peut détecter (offline: true).
+//    Le frontend conserve séparément les questions synchronisées
+//    après connexion et peut les utiliser pour un quiz hors ligne.
+//    Connexion, compte et synchronisation des scores exigent encore
+//    le réseau. En cas d'échec API, on renvoie une erreur JSON.
 // ════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'baccpro-shell-v1';
+const CACHE_NAME = 'baccpro-shell-v4';
 
 // Fichiers de l'app shell à précharger à l'installation.
 // Chemins relatifs : fonctionne quel que soit le sous-dossier
@@ -19,6 +19,9 @@ const CACHE_NAME = 'baccpro-shell-v1';
 const APP_SHELL = [
   './',
   './index.html',
+  './google-sign-in.js',
+  './push-config.js',
+  './baccpro-push-client.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
@@ -51,6 +54,47 @@ self.addEventListener('activate', (event) => {
         )
       )
       .then(() => self.clients.claim())
+  );
+});
+
+// Les notifications push sont affichées par le service worker même si la PWA
+// n'a plus de page ouverte (Android/Chrome et PWA installée sur iOS compatible).
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (_) {
+    payload = { body: event.data ? event.data.text() : '' };
+  }
+
+  const title = payload.title || 'baccPRO — rappel de révision';
+  const options = {
+    body: payload.body || 'C’est l’heure de reprendre tes révisions !',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    tag: 'baccpro-daily-17h',
+    renotify: true,
+    silent: false,
+    vibrate: [200, 100, 200],
+    data: { url: payload.url || './' },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(
+    (event.notification.data && event.notification.data.url) || './',
+    self.registration.scope
+  ).href;
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
+      for (const client of windows) {
+        if (client.url === target && 'focus' in client) return client.focus();
+      }
+      return clients.openWindow ? clients.openWindow(target) : undefined;
+    })
   );
 });
 

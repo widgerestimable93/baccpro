@@ -2,6 +2,9 @@ package com.baccpro.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
@@ -11,6 +14,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -19,6 +23,10 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
+import android.util.Log;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -33,6 +41,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,12 +58,24 @@ public class MainActivity extends Activity {
     private Uri pendingGoogleCallback;
     private boolean appPageReady;
     private boolean googleAuthBusy;
+    private TextToSpeech voiceTts;
+    private volatile boolean voiceTtsReady;
+    private volatile int voiceTextOffset;
+    private volatile int voiceJob;
+    private volatile int voiceChunkEnd;
+    private volatile boolean voiceStopped = true;
+    private volatile String voiceText = "";
+    private volatile String voiceUtteranceId = "";
     private final ExecutorService authExecutor = Executors.newSingleThreadExecutor();
 
     @SuppressLint({"SetJavaScriptEnabled"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        initializeVoiceTts();
+        DailyReminderScheduler.createNotificationChannel(this);
+        DailyReminderScheduler.scheduleDaily(this);
+        requestNotificationPermissionIfNeeded();
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
@@ -91,6 +112,17 @@ public class MainActivity extends Activity {
         webView.loadUrl(APP_URL);
     }
 
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33
+            && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                1703
+            );
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
         WebSettings settings = webView.getSettings();
@@ -107,11 +139,23 @@ public class MainActivity extends Activity {
         settings.setDisplayZoomControls(false);
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
+        webView.addJavascriptInterface(new BaccproVoiceBridge(), "BaccproTts");
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
         webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                Uri page = Uri.parse(url);
+                if ("widgerestimable93.github.io".equalsIgnoreCase(page.getHost())) {
+                    view.addJavascriptInterface(new BaccproVoiceBridge(), "BaccproTts");
+                } else {
+                    view.removeJavascriptInterface("BaccproTts");
+                }
+                super.onPageStarted(view, url, favicon);
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(
                 WebView view,
@@ -134,6 +178,12 @@ public class MainActivity extends Activity {
                     || "script.google.com".equalsIgnoreCase(host)
                     || (host != null && ("google.com".equalsIgnoreCase(host)
                         || host.toLowerCase().endsWith(".google.com")));
+
+                if ("widgerestimable93.github.io".equalsIgnoreCase(host)) {
+                    view.addJavascriptInterface(new BaccproVoiceBridge(), "BaccproTts");
+                } else {
+                    view.removeJavascriptInterface("BaccproTts");
+                }
 
                 if (!isAppHost) {
                     try {
@@ -162,6 +212,131 @@ public class MainActivity extends Activity {
                 progressBar.setProgress(progress);
             }
         });
+    }
+
+    private void initializeVoiceTts() {
+        voiceTts = new TextToSpeech(this, status -> {
+            if (status != TextToSpeech.SUCCESS || voiceTts == null) return;
+            voiceTtsReady = true;
+            voiceTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override public void onStart(String utteranceId) {
+                    if (utteranceId.equals(voiceUtteranceId) && !voiceStopped)
+                        runVoiceCallback("nativeBoundary(" + voiceTextOffset + ")");
+                }
+                @Override public void onDone(String utteranceId) {
+                    if (!utteranceId.equals(voiceUtteranceId) || voiceStopped) return;
+                    voiceTextOffset = voiceChunkEnd;
+                    runVoiceCallback("nativeBoundary(" + voiceTextOffset + ")");
+                    final int job = voiceJob;
+                    if (voiceTextOffset >= voiceText.length()) { voiceStopped = true; runVoiceCallback("nativeFinished()"); }
+                    else if (webView != null) webView.post(() -> speakVoiceChunk(job));
+                }
+                @Override public void onError(String utteranceId) {
+                    if (utteranceId.equals(voiceUtteranceId) && !voiceStopped) runVoiceCallback("nativeFailure()");
+                }
+                @Override public void onRangeStart(String utteranceId, int start, int end, int frame) {
+                    if (Build.VERSION.SDK_INT >= 26 && utteranceId.equals(voiceUtteranceId) && !voiceStopped)
+                        runVoiceCallback("nativeBoundary(" + (voiceTextOffset + start) + ")");
+                }
+            });
+            runVoiceCallback("refreshVoices()");
+        });
+    }
+
+    private void runVoiceCallback(final String call) {
+        if (webView == null) return;
+        webView.post(() -> webView.evaluateJavascript(
+            "if(window.BaccproVoice){window.BaccproVoice." + call + ";}", null));
+    }
+
+    private void speakVoiceChunk(int job) {
+        if (voiceTts == null || !voiceTtsReady || voiceStopped || job != voiceJob) return;
+        if (voiceTextOffset >= voiceText.length()) { runVoiceCallback("nativeFinished()"); return; }
+        int start = voiceTextOffset;
+        int end = Math.min(voiceText.length(), start + 320);
+        if (end < voiceText.length()) {
+            int sentenceEnd = Math.max(voiceText.lastIndexOf('.', end),
+                Math.max(voiceText.lastIndexOf('?', end), voiceText.lastIndexOf('!', end)));
+            if (sentenceEnd > start + 40) end = sentenceEnd + 1;
+            else {
+                int wordEnd = voiceText.lastIndexOf(' ', end);
+                if (wordEnd > start + 40) end = wordEnd;
+            }
+        }
+        voiceChunkEnd = end;
+        voiceUtteranceId = "baccpro-voice-" + job + "-" + start;
+        runVoiceCallback("nativeBoundary(" + start + ")");
+        int result = voiceTts.speak(voiceText.substring(start, end), TextToSpeech.QUEUE_FLUSH,
+            null, voiceUtteranceId);
+        if (result == TextToSpeech.ERROR) runVoiceCallback("nativeFailure()");
+    }
+
+    private final class BaccproVoiceBridge {
+        @JavascriptInterface
+        public String getVoicesJson() {
+            JSONArray result = new JSONArray();
+            if (!voiceTtsReady || voiceTts == null) return result.toString();
+            try {
+                Set<Voice> voices = voiceTts.getVoices();
+                if (voices == null) return result.toString();
+                for (Voice voice : voices) {
+                    if (voice == null || !voice.getLocale().getLanguage().equalsIgnoreCase("fr")) continue;
+                    JSONObject item = new JSONObject();
+                    item.put("name", voice.getName());
+                    item.put("lang", voice.getLocale().toLanguageTag());
+                    item.put("networkRequired", voice.isNetworkConnectionRequired());
+                    result.put(item);
+                }
+            } catch (Exception e) { Log.w("baccPRO-TTS", "Unable to enumerate voices", e); }
+            return result.toString();
+        }
+
+        @JavascriptInterface
+        public void speak(String text, float rate, String voiceName, int startOffset) {
+            final String spoken = text == null ? "" : text;
+            final String wantedVoice = voiceName == null ? "" : voiceName;
+            final int offset = Math.max(0, Math.min(startOffset, spoken.length()));
+            runOnUiThread(() -> {
+                if (!voiceTtsReady || voiceTts == null || spoken.isEmpty() || offset >= spoken.length()) {
+                    runVoiceCallback("nativeFailure()"); return;
+                }
+                try {
+                    Voice selected = null;
+                    Set<Voice> voices = voiceTts.getVoices();
+                    if (voices != null) for (Voice voice : voices) {
+                        if (voice != null && voice.getName().equals(wantedVoice)
+                            && voice.getLocale().getLanguage().equalsIgnoreCase("fr")) { selected = voice; break; }
+                    }
+                    if (selected == null) { runVoiceCallback("nativeFailure()"); return; }
+                    voiceTts.setVoice(selected);
+                    voiceTts.setSpeechRate(Math.max(0.7f, Math.min(1.6f, rate)));
+                    voiceJob++;
+                    voiceStopped = false;
+                    voiceUtteranceId = "";
+                    voiceText = spoken;
+                    voiceTextOffset = offset;
+                    speakVoiceChunk(voiceJob);
+                } catch (Exception e) { Log.w("baccPRO-TTS", "Unable to start speech", e); runVoiceCallback("nativeFailure()"); }
+            });
+        }
+
+        @JavascriptInterface
+        public void stop() { runOnUiThread(() -> stopVoicePlayback()); }
+
+        @JavascriptInterface
+        public void openVoiceSettings() {
+            runOnUiThread(() -> {
+                try { startActivity(new Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)); }
+                catch (ActivityNotFoundException e) { Log.w("baccPRO-TTS", "TTS setup screen unavailable", e); }
+            });
+        }
+    }
+
+    private void stopVoicePlayback() {
+        voiceStopped = true;
+        voiceJob++;
+        voiceUtteranceId = "";
+        if (voiceTts != null) voiceTts.stop();
     }
 
     private void processPendingGoogleCallback() {
@@ -281,11 +456,21 @@ public class MainActivity extends Activity {
                         }
                     }
                     result = new JSONObject(responseText);
+                    if (result.has("__bridgeError")) {
+                        String bridgeError = result.optString("__bridgeError", "");
+                        result = new JSONObject();
+                        result.put("success", false);
+                        result.put("message", bridgeError.isEmpty()
+                            ? "Le serveur Apps Script a refusé la demande."
+                            : bridgeError);
+                    }
                 } catch (Exception e) {
+                    Log.e("baccPROGoogleAuth", "Ticket redemption failed", e);
                     result = new JSONObject();
                     try {
                         result.put("success", false);
-                        result.put("message", "Erreur réseau. Vérifie ta connexion puis recommence.");
+                        result.put("message", "La connexion au serveur a échoué (" +
+                            e.getClass().getSimpleName() + "). Vérifie ta connexion puis recommence.");
                     } catch (JSONException ignored) {}
                 }
 
@@ -372,8 +557,24 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onPause() {
+        if (webView != null) webView.evaluateJavascript(
+            "if(window.BaccproVoice){window.BaccproVoice.stop(true);}", null);
+        stopVoicePlayback();
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (webView != null) webView.evaluateJavascript(
+            "if(window.BaccproVoice){window.BaccproVoice.refreshVoices();}", null);
+    }
+
+    @Override
     protected void onDestroy() {
         authExecutor.shutdownNow();
+        if (voiceTts != null) { voiceTts.stop(); voiceTts.shutdown(); voiceTts = null; }
         super.onDestroy();
     }
 }

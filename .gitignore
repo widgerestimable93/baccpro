@@ -1,0 +1,16 @@
+.gradle/
+.gradle-codex/
+.codex-home/
+.secrets/
+.tools/
+*.jks
+*.keystore
+*.p12
+*.pfx
+app/build/
+functions/node_modules/
+functions/.env*
+!functions/.env.example
+.vapid-private-jwk.json
+release-apk-build25/
+/build/

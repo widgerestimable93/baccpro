@@ -3,6 +3,16 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def releaseSigningValues = [
+    keystorePath: System.getenv('ANDROID_KEYSTORE_PATH'),
+    storePassword: System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+    keyAlias: System.getenv('ANDROID_KEY_ALIAS'),
+    keyPassword: System.getenv('ANDROID_KEY_PASSWORD')
+]
+def releaseSigningConfigured = releaseSigningValues.values().every { value ->
+    value != null && !value.isBlank()
+}
+
 android {
     namespace 'com.baccpro.app'
     compileSdk 33
@@ -11,12 +21,28 @@ android {
         applicationId "com.baccpro.app"
         minSdk 21
         targetSdk 33
-        versionCode 2
-        versionName "2.0"
+        versionCode 4
+        versionName "2.2.0"
+    }
+
+    signingConfigs {
+        release {
+            if (releaseSigningConfigured) {
+                storeFile rootProject.file(releaseSigningValues.keystorePath)
+                storePassword releaseSigningValues.storePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
+        }
     }
 
     buildTypes {
-        release { minifyEnabled false }
+        release {
+            minifyEnabled false
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
+        }
         debug { minifyEnabled false }
     }
 
