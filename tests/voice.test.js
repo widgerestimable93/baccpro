@@ -153,6 +153,14 @@ test('quiz feedback still invokes the existing explanation renderer and audio ha
   assert.doesNotMatch(voiceSource, /isPremium|is_premium|submitPaymentRequest|activatePremium/);
 });
 
+test('question loading dismisses the spinner on a successful server response', () => {
+  const start = html.indexOf('function startQuiz(){');
+  const end = html.indexOf('// TIMER GLOBAL', start);
+  const quizLoader = html.slice(start, end);
+  assert.match(quizLoader, /\.withSuccessHandler\(res=>\{\s*hideLoader\(\);/);
+  assert.match(quizLoader, /\.withFailureHandler\(err=>\{hideLoader\(\)/);
+});
+
 test('all inline JavaScript blocks in the application remain syntactically valid', () => {
   const blocks = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
   assert.ok(blocks.length > 0);

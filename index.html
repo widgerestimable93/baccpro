@@ -2427,6 +2427,7 @@ function startQuiz(){
     if(!navigator.onLine){_startOfflineQuizFromCache();return;}
     google.script.run
       .withSuccessHandler(res=>{
+        hideLoader();
         if(!res.success||!res.questions||!res.questions.length){
           if(!(_offlineAllowed()&&_startOfflineQuizFromCache()))showToast('Aucune question trouvée pour ce niveau/matière.','error'); return;
         }
