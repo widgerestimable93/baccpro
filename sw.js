@@ -11,7 +11,7 @@
 //    le réseau. En cas d'échec API, on renvoie une erreur JSON.
 // ════════════════════════════════════════════════════════
 
-const CACHE_NAME = 'baccpro-shell-v4';
+const CACHE_NAME = 'baccpro-shell-v5';
 
 // Fichiers de l'app shell à précharger à l'installation.
 // Chemins relatifs : fonctionne quel que soit le sous-dossier
